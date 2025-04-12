@@ -1,0 +1,45 @@
+---
+- name: CIS 1.1.1.1 - Ensure cramfs module is not available
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Check if cramfs is compiled as a module (optional check)
+      ansible.builtin.shell: modinfo cramfs
+      register: cramfs_info
+      failed_when: false
+      changed_when: false
+
+    - name: Disable cramfs with install rule
+      ansible.builtin.lineinfile:
+        path: /etc/modprobe.d/cramfs.conf
+        line: "install cramfs /bin/false"
+        create: yes
+        mode: '0644'
+
+    - name: Blacklist cramfs module
+      ansible.builtin.lineinfile:
+        path: /etc/modprobe.d/cramfs-blacklist.conf
+        line: "blacklist cramfs"
+        create: yes
+        mode: '0644'
+
+    - name: Unload cramfs if it's loaded
+      ansible.builtin.shell: rmmod cramfs
+      register: cramfs_unload
+      ignore_errors: true
+      changed_when: "'Module cramfs not found' not in cramfs_unload.stderr"
+
+    - name: Regenerate initramfs on RedHat-based distros
+      ansible.builtin.command: dracut -v -f
+      when:
+        - ansible_os_family == "RedHat"
+        - ansible_virtualization_type != "docker"
+      ignore_errors: true
+
+    - name: Update initramfs on Debian-based distros
+      ansible.builtin.command: update-initramfs -u
+      when:
+        - ansible_os_family == "Debian"
+        - ansible_virtualization_type != "docker"
+      ignore_errors: true
