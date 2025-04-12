@@ -1,0 +1,15 @@
+---
+- name: Install and start NGINX
+  hosts: all
+  become: true  # this gives sudo access
+  tasks:
+    - name: Install NGINX
+      ansible.builtin.package:
+        name: nginx
+        state: present
+
+    - name: Start NGINX
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
