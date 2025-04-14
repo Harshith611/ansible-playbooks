@@ -1,0 +1,74 @@
+---
+- name: Ensure system login banners are configured properly (CIS 1.7.1, 1.7.2, 1.7.3)
+  hosts: all
+  become: true
+  vars:
+    login_banner_text: |
+      Authorized users only. All activity may be monitored and reported.
+
+  tasks:
+
+    - name: Backup existing /etc/motd
+      copy:
+        src: /etc/motd
+        dest: /etc/motd.bak
+        remote_src: yes
+        mode: '0644'
+      when: ansible_facts['os_family'] == "RedHat"
+
+    - name: Set secure message of the day (MOTD) banner [CIS 1.7.1]
+      copy:
+        dest: /etc/motd
+        content: "{{ login_banner_text }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Backup existing /etc/issue
+      copy:
+        src: /etc/issue
+        dest: /etc/issue.bak
+        remote_src: yes
+        mode: '0644'
+
+    - name: Set secure local login banner in /etc/issue [CIS 1.7.2]
+      copy:
+        dest: /etc/issue
+        content: "{{ login_banner_text }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Backup existing /etc/issue.net
+      copy:
+        src: /etc/issue.net
+        dest: /etc/issue.net.bak
+        remote_src: yes
+        mode: '0644'
+
+    - name: Set secure remote login banner in /etc/issue.net [CIS 1.7.3]
+      copy:
+        dest: /etc/issue.net
+        content: "{{ login_banner_text }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Display final MOTD
+      shell: cat /etc/motd
+      register: motd_content
+
+    - name: Display final local login banner
+      shell: cat /etc/issue
+      register: issue_content
+
+    - name: Display final remote login banner
+      shell: cat /etc/issue.net
+      register: issue_net_content
+
+    - name: Show banner results
+      debug:
+        msg:
+          - "MOTD: {{ motd_content.stdout }}"
+          - "Local Login Banner: {{ issue_content.stdout }}"
+          - "Remote Login Banner: {{ issue_net_content.stdout }}"
