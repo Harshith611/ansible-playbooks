@@ -1,45 +1,68 @@
 ---
-- name: CIS 1.1.1.1 - Ensure cramfs module is not available
+- name: Ensure cramfs kernel module is not available (CIS 1.1.1.1)
   hosts: all
   become: true
+  vars:
+    module_name: cramfs
+    module_type: fs
+    config_file: "/etc/modprobe.d/cramfs.conf"
+ 
   tasks:
-
-    - name: Check if cramfs is compiled as a module (optional check)
-      ansible.builtin.shell: modinfo cramfs
-      register: cramfs_info
-      failed_when: false
+ 
+    - name: Get installed kernel versions
+      find:
+        paths: /lib/modules
+        file_type: directory
+        recurse: false
+      register: kernel_versions
+ 
+    - name: Check if cramfs module exists in any kernel
+      shell: |
+        for version in {{ kernel_versions.files | map(attribute='path') | map('basename') | list | join(' ') }}; do
+          if [ -d "/lib/modules/$version/kernel/{{ module_type }}/{{ module_name }}" ]; then
+            echo "$version"
+          fi
+        done
+      register: cramfs_in_kernels
       changed_when: false
-
-    - name: Disable cramfs with install rule
-      ansible.builtin.lineinfile:
-        path: /etc/modprobe.d/cramfs.conf
-        line: "install cramfs /bin/false"
+ 
+    - name: Set fact if cramfs exists in current kernel
+      set_fact:
+        cramfs_in_current_kernel: "{{ cramfs_in_kernels.stdout_lines | select('equalto', ansible_kernel) | list | length > 0 }}"
+ 
+    - name: Check if cramfs is currently loaded
+      command: lsmod
+      register: lsmod_result
+      changed_when: false
+ 
+    - name: Set fact if cramfs is loaded
+      set_fact:
+        cramfs_loaded: "{{ 'cramfs' in lsmod_result.stdout }}"
+ 
+    - name: Add install line to disable cramfs load
+      lineinfile:
+        path: "{{ config_file }}"
+        line: "install {{ module_name }} /bin/false"
         create: yes
-        mode: '0644'
-
-    - name: Blacklist cramfs module
-      ansible.builtin.lineinfile:
-        path: /etc/modprobe.d/cramfs-blacklist.conf
-        line: "blacklist cramfs"
+        state: present
+      when: cramfs_in_current_kernel
+ 
+    - name: Add blacklist line for cramfs
+      lineinfile:
+        path: "{{ config_file }}"
+        line: "blacklist {{ module_name }}"
         create: yes
-        mode: '0644'
-
-    - name: Unload cramfs if it's loaded
-      ansible.builtin.shell: rmmod cramfs
-      register: cramfs_unload
+        state: present
+      when: cramfs_in_kernels.stdout != ""
+ 
+    - name: Unload cramfs module if loaded
+      command: modprobe -r {{ module_name }}
+      when: cramfs_loaded
       ignore_errors: true
-      changed_when: "'Module cramfs not found' not in cramfs_unload.stderr"
-
-    - name: Regenerate initramfs on RedHat-based distros
-      ansible.builtin.command: dracut -v -f
-      when:
-        - ansible_os_family == "RedHat"
-        - ansible_virtualization_type != "docker"
-      ignore_errors: true
-
-    - name: Update initramfs on Debian-based distros
-      ansible.builtin.command: update-initramfs -u
-      when:
-        - ansible_os_family == "Debian"
-        - ansible_virtualization_type != "docker"
-      ignore_errors: true
+ 
+    - name: Report result
+      debug:
+        msg: >
+          cramfs found in kernels: {{ cramfs_in_kernels.stdout_lines }} |
+          cramfs in current kernel: {{ cramfs_in_current_kernel }} |
+          cramfs loaded: {{ cramfs_loaded }}
