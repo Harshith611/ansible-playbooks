@@ -1,0 +1,24 @@
+---
+- name: Ensure no unconfined services exist
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Check for unconfined services (using ps and SELinux context)
+      shell: |
+        ps -eZ | grep -E 'unconfined_service_t|unconfined_t' || true
+      register: unconfined_services
+      changed_when: false
+
+    - name: Fail if unconfined services are found
+      fail:
+        msg: |
+          Unconfined services detected!
+          These processes are running without proper SELinux confinement:
+          {{ unconfined_services.stdout_lines }}
+      when: unconfined_services.stdout != ""
+
+    - name: Print success message
+      debug:
+        msg: "No unconfined services detected. SELinux confinement is in place."
+      when: unconfined_services.stdout == ""
