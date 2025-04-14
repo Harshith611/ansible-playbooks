@@ -1,0 +1,51 @@
+---
+- name: CIS 1.2.2 - Ensure gpgcheck is globally activated
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Check if gpgcheck is set correctly in /etc/dnf/dnf.conf
+      command: grep -E '^\s*gpgcheck\s*=\s*1\s*$' /etc/dnf/dnf.conf
+      register: gpgcheck_dnf_conf
+      ignore_errors: yes
+
+    - name: Remediate - Set gpgcheck=1 in /etc/dnf/dnf.conf
+      lineinfile:
+        path: /etc/dnf/dnf.conf
+        regexp: '^\s*gpgcheck\s*='
+        line: 'gpgcheck=1'
+        insertafter: '^\[main\]'
+        state: present
+      when: gpgcheck_dnf_conf.rc != 0
+
+    - name: Find all .repo files
+      find:
+        paths: /etc/yum.repos.d/
+        patterns: '*.repo'
+        file_type: file
+      register: repo_files
+
+    - name: Check and remediate gpgcheck=0 in repo files
+      block:
+        - name: Replace gpgcheck=0 with gpgcheck=1
+          replace:
+            path: "{{ item.path }}"
+            regexp: '^\s*gpgcheck\s*=\s*0\s*$'
+            replace: 'gpgcheck=1'
+            backup: yes
+          loop: "{{ repo_files.files }}"
+
+        - name: Add gpgcheck=1 if not present at all in repo files
+          lineinfile:
+            path: "{{ item.path }}"
+            regexp: '^\s*gpgcheck\s*='
+            line: 'gpgcheck=1'
+            insertafter: '^baseurl='
+            state: present
+          loop: "{{ repo_files.files }}"
+      when: repo_files.matched > 0
+
+    - name: Report remediation complete
+      debug:
+        msg: "✔ gpgcheck globally activated in /etc/dnf/dnf.conf and all yum repo files."
+
