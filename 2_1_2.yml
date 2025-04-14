@@ -1,0 +1,38 @@
+---
+- name: Ensure Chrony is configured properly (CIS 2.1.2)
+  hosts: all
+  become: true
+
+  vars:
+    ntp_server: "10.0.0.2"
+
+  tasks:
+
+    - name: Install chrony if not installed
+      package:
+        name: chrony
+        state: present
+
+    - name: Ensure server {{ ntp_server }} is configured in chrony.conf
+      lineinfile:
+        path: /etc/chrony.conf
+        regexp: "^\\s*(server|pool)\\s+{{ ntp_server }}"
+        line: "server {{ ntp_server }}"
+        state: present
+        insertafter: EOF
+        create: yes
+        backup: yes
+
+    - name: Ensure chronyd service is enabled and running
+      systemd:
+        name: chronyd
+        state: restarted
+        enabled: yes
+
+    - name: Display chrony configuration
+      shell: grep -E "^(server|pool)" /etc/chrony.conf
+      register: chrony_config
+
+    - name: Show chrony servers configured
+      debug:
+        msg: "Chrony configured servers:\n{{ chrony_config.stdout }}"
