@@ -1,0 +1,49 @@
+---
+- name: Ensure jffs2 kernel module is not available (CIS 1.1.1.5)
+  hosts: all
+  become: yes
+  tasks:
+    - name: Check if jffs2 module exists
+      shell: |
+        find /lib/modules/$(uname -r)/kernel/fs -name jffs2.ko* || true
+      register: jffs2_module_path
+      changed_when: false
+
+    - name: Check if jffs2 module is currently loaded
+      shell: lsmod | grep -w jffs2
+      register: jffs2_loaded
+      failed_when: false
+      changed_when: false
+
+    - name: Check if jffs2 module is loadable
+      shell: modprobe -n -v jffs2
+      register: jffs2_loadable
+      changed_when: false
+
+    - name: Ensure jffs2 is blacklisted
+      lineinfile:
+        path: /etc/modprobe.d/jffs2.conf
+        regexp: '^blacklist jffs2'
+        line: 'blacklist jffs2'
+        create: yes
+
+    - name: Ensure jffs2 is set not to load
+      lineinfile:
+        path: /etc/modprobe.d/jffs2.conf
+        regexp: '^install jffs2'
+        line: 'install jffs2 /bin/false'
+        create: yes
+
+    - name: Unload jffs2 module if loaded
+      shell: modprobe -r jffs2
+      when: jffs2_loaded.stdout != ""
+      ignore_errors: true
+
+    - name: Print status
+      debug:
+        msg: |
+          - jffs2 module found: {{ jffs2_module_path.stdout_lines | default(['Not found']) }}
+          - jffs2 loadable: {{ jffs2_loadable.stdout }}
+          - jffs2 loaded: {{ 'Yes' if jffs2_loaded.stdout != '' else 'No' }}
+          - Applied blacklist and install directives to /etc/modprobe.d/jffs2.conf
+
