@@ -1,0 +1,54 @@
+---
+- name: Ensure secure networking sysctl parameters (CIS 3.3.1 and 3.3.10)
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Disable IPv4 forwarding - persist
+      copy:
+        dest: /etc/sysctl.d/60-netipv4_sysctl.conf
+        content: |
+          # CIS 3.3.1 - Disable IPv4 forwarding
+          net.ipv4.ip_forward = 0
+          # CIS 3.3.10 - Enable TCP SYN Cookies
+          net.ipv4.tcp_syncookies = 1
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Disable IPv6 forwarding - persist
+      copy:
+        dest: /etc/sysctl.d/60-netipv6_sysctl.conf
+        content: |
+          # CIS 3.3.1 - Disable IPv6 forwarding
+          net.ipv6.conf.all.forwarding = 0
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Apply IPv4 forwarding setting immediately
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: '0'
+        state: present
+        reload: yes
+
+    - name: Apply IPv6 forwarding setting immediately
+      sysctl:
+        name: net.ipv6.conf.all.forwarding
+        value: '0'
+        state: present
+        reload: yes
+
+    - name: Enable TCP SYN cookies - apply immediately
+      sysctl:
+        name: net.ipv4.tcp_syncookies
+        value: '1'
+        state: present
+        reload: yes
+
+    - name: Flush IPv4 route table
+      command: sysctl -w net.ipv4.route.flush=1
+
+    - name: Flush IPv6 route table
+      command: sysctl -w net.ipv6.route.flush=1
