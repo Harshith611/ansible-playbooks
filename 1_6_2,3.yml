@@ -2,39 +2,48 @@
 - name: Ensure system-wide crypto policy disables SHA-1 and CBC for SSH
   hosts: all
   become: true
-
   tasks:
-    - name: Check current crypto policy
+
+    - name: Display current crypto policy
       command: update-crypto-policies --show
       register: current_crypto_policy
       changed_when: false
 
-    - name: Display current crypto policy
-      debug:
-        msg: "Current crypto policy: {{ current_crypto_policy.stdout }}"
-
-    - name: Ensure NO-SHA1 module is present
+    - name: Create NO-SHA1 crypto policy module
       copy:
-        src: /usr/share/crypto-policies/policies/modules/NO-SHA1.pmod
         dest: /etc/crypto-policies/policies/modules/NO-SHA1.pmod
-        owner: root
-        group: root
-        mode: '0644'
-      ignore_errors: true
-
-    - name: Create NO-SHA1.pmod if missing
-      copy:
         content: |
+          # Disable SHA-1 hashes and signatures
           hash = -SHA1
           sign = -*-SHA1
           sha1_in_certs = 0
-        dest: /etc/crypto-policies/policies/modules/NO-SHA1.pmod
         owner: root
         group: root
         mode: '0644'
-      when: not lookup('ansible.builtin.file', '/etc/crypto-policies/policies/modules/NO-SHA1.pmod', errors='ignore')
 
-    - name: Create NO-SSHCBC module
+    - name: Create NO-SSHCBC crypto policy module
       copy:
+        dest: /etc/crypto-policies/policies/modules/NO-SSHCBC.pmod
         content: |
-          # This is a subpolicy to disable all CBC mode ciphers for SSH protocol
+          # Disable CBC mode ciphers for SSH
+          cipher@SSH = -*-CBC
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Apply updated crypto policy
+      command: update-crypto-policies --set DEFAULT:NO-SHA1:NO-SSHCBC
+
+    - name: Confirm new crypto policy
+      command: update-crypto-policies --show
+      register: final_crypto_policy
+      changed_when: false
+
+    - name: Show updated crypto policy
+      debug:
+        msg: "✅ Crypto Policy Applied: {{ final_crypto_policy.stdout }}"
+
+    - name: Reboot system to apply changes
+      reboot:
+        msg: "Rebooting to apply crypto policy changes"
+        reboot_timeout: 600
