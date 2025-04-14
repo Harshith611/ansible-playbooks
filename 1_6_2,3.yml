@@ -4,11 +4,7 @@
   become: true
   tasks:
 
-    - name: Display current crypto policy
-      command: update-crypto-policies --show
-      register: current_crypto_policy
-      changed_when: false
-
+    # Ensure NO-SHA1 crypto policy module is present
     - name: Create NO-SHA1 crypto policy module
       copy:
         dest: /etc/crypto-policies/policies/modules/NO-SHA1.pmod
@@ -21,6 +17,7 @@
         group: root
         mode: '0644'
 
+    # Ensure NO-SSHCBC crypto policy module is present
     - name: Create NO-SSHCBC crypto policy module
       copy:
         dest: /etc/crypto-policies/policies/modules/NO-SSHCBC.pmod
@@ -31,19 +28,42 @@
         group: root
         mode: '0644'
 
-    - name: Apply updated crypto policy
-      command: update-crypto-policies --set DEFAULT:NO-SHA1:NO-SSHCBC
-
-    - name: Confirm new crypto policy
+    # Check current crypto policy
+    - name: Check current crypto policy
       command: update-crypto-policies --show
-      register: final_crypto_policy
+      register: current_crypto_policy
       changed_when: false
 
-    - name: Show updated crypto policy
+    # Display current crypto policy
+    - name: Display current crypto policy
       debug:
-        msg: "✅ Crypto Policy Applied: {{ final_crypto_policy.stdout }}"
+        msg: "Current crypto policy: {{ current_crypto_policy.stdout }}"
 
-    - name: Reboot system to apply changes
-      reboot:
-        msg: "Rebooting to apply crypto policy changes"
-        reboot_timeout: 600
+    # Apply the updated policy to disable SHA-1 and CBC ciphers
+    - name: Apply NO-SHA1 and NO-SSHCBC modules to crypto policy if not already set
+      command: update-crypto-policies --set DEFAULT:NO-SHA1:NO-SSHCBC
+      when: current_crypto_policy.stdout != "DEFAULT:NO-SHA1:NO-SSHCBC"
+      notify:
+        - restart crypto services
+
+    # Ensure that CBC ciphers are excluded from sshd_config
+    - name: Ensure Ciphers directive excludes CBC ciphers in sshd_config
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^Ciphers'
+        line: 'Ciphers aes128-ctr,aes192-ctr,aes256-ctr'
+        create: yes
+        backup: yes
+      notify:
+        - restart sshd
+
+  handlers:
+    - name: restart crypto services
+      service:
+        name: cryptsetup
+        state: restarted
+
+    - name: restart sshd
+      service:
+        name: sshd
+        state: restarted
