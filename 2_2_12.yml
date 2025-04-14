@@ -1,0 +1,29 @@
+---
+- name: Ensure rpcbind services are not in use
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Stop rpcbind services if running
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+        masked: true
+      loop:
+        - rpcbind.service
+        - rpcbind.socket
+
+    - name: Check if rpcbind package is installed
+      command: rpm -q rpcbind
+      register: rpcbind_installed
+      ignore_errors: true
+      changed_when: false
+
+    - name: Remove rpcbind package if installed (optional - only if not needed)
+      dnf:
+        name: rpcbind
+        state: absent
+      when: rpcbind_installed.rc == 0
+      tags:
+        - optional
