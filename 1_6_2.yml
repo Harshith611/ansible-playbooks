@@ -1,9 +1,9 @@
 ---
-- name: Ensure system wide crypto policy disables SHA-1 hash and signature support
+- name: Ensure system-wide crypto policy disables SHA-1 and CBC for SSH
   hosts: all
   become: true
-  tasks:
 
+  tasks:
     - name: Check current crypto policy
       command: update-crypto-policies --show
       register: current_crypto_policy
@@ -13,11 +13,6 @@
       debug:
         msg: "Current crypto policy: {{ current_crypto_policy.stdout }}"
 
-    - name: Apply NO-SHA1 policy to the system-wide crypto policy
-      command: update-crypto-policies --set DEFAULT:NO-SHA1
-      when: current_crypto_policy.stdout != "DEFAULT:NO-SHA1"
-      notify: restart crypto services
-
     - name: Ensure NO-SHA1 module is present
       copy:
         src: /usr/share/crypto-policies/policies/modules/NO-SHA1.pmod
@@ -25,38 +20,21 @@
         owner: root
         group: root
         mode: '0644'
-      when: current_crypto_policy.stdout != "DEFAULT:NO-SHA1"
-      notify: restart crypto services
+      ignore_errors: true
 
-    - name: Create or update the custom NO-SHA1 module if not present
-      block:
-        - name: Check if NO-SHA1 module file exists
-          stat:
-            path: /etc/crypto-policies/policies/modules/NO-SHA1.pmod
-          register: no_sha1_module_exists
+    - name: Create NO-SHA1.pmod if missing
+      copy:
+        content: |
+          hash = -SHA1
+          sign = -*-SHA1
+          sha1_in_certs = 0
+        dest: /etc/crypto-policies/policies/modules/NO-SHA1.pmod
+        owner: root
+        group: root
+        mode: '0644'
+      when: not lookup('ansible.builtin.file', '/etc/crypto-policies/policies/modules/NO-SHA1.pmod', errors='ignore')
 
-        - name: Add or modify NO-SHA1 module file
-          copy:
-            content: |
-              hash = -SHA1
-              sign = -*-SHA1
-              sha1_in_certs = 0
-            dest: /etc/crypto-policies/policies/modules/NO-SHA1.pmod
-            owner: root
-            group: root
-            mode: '0644'
-          when: not no_sha1_module_exists.stat.exists
-
-      notify: restart crypto services
-
-  handlers:
-    - name: restart crypto services
-      service:
-        name: cryptsetup
-        state: restarted
-
-    - name: reboot the system if necessary
-      reboot:
-        reboot_timeout: 600
-        test_command: whoami
-      when: current_crypto_policy.stdout != "DEFAULT:NO-SHA1"
+    - name: Create NO-SSHCBC module
+      copy:
+        content: |
+          # This is a subpolicy to disable all CBC mode ciphers for SSH protocol
