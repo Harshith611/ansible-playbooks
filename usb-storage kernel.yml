@@ -1,0 +1,37 @@
+---
+- name: Ensure usb-storage kernel module is not available (CIS 1.1.1.8)
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Check if usb-storage module exists
+      find:
+        paths: "/lib/modules/{{ ansible_kernel }}/kernel/drivers"
+        patterns: "usb-storage.ko*"
+        recurse: yes
+      register: usb_module_files
+
+    - name: Debug found usb-storage modules
+      debug:
+        msg: "usb-storage module path(s): {{ usb_module_files.files | map(attribute='path') | list }}"
+
+    - name: Ensure usb-storage is blacklisted
+      copy:
+        dest: "/etc/modprobe.d/usb_storage.conf"
+        content: |
+          install usb-storage /bin/false
+          blacklist usb-storage
+        owner: root
+        group: root
+        mode: '0644'
+      when: usb_module_files.matched > 0
+
+    - name: Unload usb-storage module if loaded
+      shell: modprobe -r usb-storage
+      ignore_errors: yes
+      when: "'usb_storage' in ansible_facts.modules"
+
+    - name: Print completion message
+      debug:
+        msg: "usb-storage module remediation complete."
+
