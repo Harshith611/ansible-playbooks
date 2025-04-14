@@ -25,11 +25,14 @@
         group: root
         mode: '0644'
       when: usb_module_files.matched > 0
+      
+    - name: Check if usb-storage module is loaded
+      command: lsmod
+      register: lsmod_output
 
     - name: Unload usb-storage module if loaded
-      shell: modprobe -r usb-storage
-      ignore_errors: yes
-      when: "'usb_storage' in ansible_facts.modules"
+      command: modprobe -r usb-storage
+      when: lsmod_output.stdout is search("usb_storage")
 
     - name: Print completion message
       debug:
