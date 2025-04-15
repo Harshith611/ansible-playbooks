@@ -1,0 +1,26 @@
+---
+- name: Ensure ptrace_scope is restricted
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Remove conflicting ptrace_scope settings from system directories
+      lineinfile:
+        path: "/usr/lib/sysctl.d/10-default-yama-scope.conf"
+        regexp: '^\s*kernel\.yama\.ptrace_scope'
+        state: absent
+      when: ansible_facts['os_family'] == "RedHat" or ansible_facts['os_family'] == "Debian"
+
+    - name: Ensure kernel.yama.ptrace_scope is set in /etc/sysctl.d/60-kernel_sysctl.conf
+      lineinfile:
+        path: /etc/sysctl.d/60-kernel_sysctl.conf
+        regexp: '^\s*kernel\.yama\.ptrace_scope'
+        line: 'kernel.yama.ptrace_scope = 1'
+        create: yes
+
+    - name: Apply the ptrace_scope setting immediately
+      sysctl:
+        name: kernel.yama.ptrace_scope
+        value: '1'
+        state: present
+        reload: yes
