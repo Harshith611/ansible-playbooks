@@ -11,8 +11,8 @@
     - name: Validate loopback rules exist
       assert:
         that:
-          - "'iif \"lo\" accept' in nft_input_chain.stdout"
-          - "'ip saddr 127.0.0.0/8 iifname != \"lo\" drop' in nft_input_chain.stdout"
-          - "'ip6 saddr ::1 iifname != \"lo\" drop' in nft_input_chain.stdout"
-        fail_msg: "One or more loopback nftables rules are missing!"
+          - nft_input_chain.stdout is search('iif\s+"lo"\s+accept')
+          - nft_input_chain.stdout is search('ip\s+saddr\s+127\.0\.0\.0/8\s+iifname\s+!=\s+"lo"\s+.*drop')
+          - nft_input_chain.stdout is search('ip6\s+saddr\s+::1\s+iifname\s+!=\s+"lo"\s+.*drop')
+        fail_msg: "One or more loopback nftables rules are missing or not in expected format."
         success_msg: "All required loopback nftables rules are present."
