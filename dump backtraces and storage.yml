@@ -1,5 +1,5 @@
 ---
-- name: Ensure core dump backtraces are disabled
+- name: Ensure core dump backtraces and storage are disabled
   hosts: all
   become: yes
   tasks:
@@ -10,15 +10,25 @@
         state: directory
         mode: '0755'
 
-    - name: Disable core dump backtraces via ProcessSizeMax=0
+    - name: Disable core dump backtraces and storage
       copy:
         dest: /etc/systemd/coredump.conf.d/99-disable-coredump.conf
         content: |
           [Coredump]
           ProcessSizeMax=0
+          Storage=none
         owner: root
         group: root
         mode: '0644'
 
     - name: Reload systemd settings
       command: systemctl daemon-reexec
+
+    - name: Verify coredump config is applied
+      command: systemd-analyze cat-config systemd-coredump
+      register: coredump_config_output
+      changed_when: false
+
+    - name: Display effective coredump configuration
+      debug:
+        var: coredump_config_output.stdout
