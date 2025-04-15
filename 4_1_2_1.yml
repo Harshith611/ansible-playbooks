@@ -1,0 +1,59 @@
+---
+- name: Ensure at is restricted to authorized users
+  hosts: all
+  become: true
+  tasks:
+    
+    - name: Ensure /etc/at.allow exists and has correct permissions
+      file:
+        path: /etc/at.allow
+        state: touch
+        owner: root
+        group: "{{ 'daemon' if 'daemon' in ansible_facts.groups else 'root' }}"
+        mode: '0640'
+
+    - name: Ensure /etc/at.deny exists and has correct permissions
+      file:
+        path: /etc/at.deny
+        state: touch
+        owner: root
+        group: "{{ 'daemon' if 'daemon' in ansible_facts.groups else 'root' }}"
+        mode: '0640'
+
+    - name: Set correct permissions for /etc/at.allow
+      file:
+        path: /etc/at.allow
+        owner: root
+        group: "{{ 'daemon' if 'daemon' in ansible_facts.groups else 'root' }}"
+        mode: '0640'
+
+    - name: Set correct permissions for /etc/at.deny
+      file:
+        path: /etc/at.deny
+        owner: root
+        group: "{{ 'daemon' if 'daemon' in ansible_facts.groups else 'root' }}"
+        mode: '0640'
+        
+    - name: Ensure that the files /etc/at.allow and /etc/at.deny are not world-writable
+      assert:
+        that:
+          - "ansible_facts.file_permissions['/etc/at.allow'].mode != '0777'"
+          - "ansible_facts.file_permissions['/etc/at.deny'].mode != '0777'"
+
+    - name: Check that /etc/at.allow file does not contain any unauthorized users (if allowed list exists)
+      shell: |
+        if [ -f /etc/at.allow ]; then
+          cat /etc/at.allow | grep -vE '^(root|admin)$' || true
+        fi
+      register: check_at_allow
+      failed_when: check_at_allow.stdout != ""
+      changed_when: false
+
+    - name: Check that /etc/at.deny file does not contain any unauthorized users (if deny list exists)
+      shell: |
+        if [ -f /etc/at.deny ]; then
+          cat /etc/at.deny | grep -vE '^(root|admin)$' || true
+        fi
+      register: check_at_deny
+      failed_when: check_at_deny.stdout != ""
+      changed_when: false
