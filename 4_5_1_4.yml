@@ -14,13 +14,16 @@
     - name: Filter real users (excluding system users)
       set_fact:
         real_users: >-
-          {{ passwd_output.stdout_lines | selectattr('split(":")[6]', 'search', '^/bin/.*sh$') |
-             map('split', ':') |
-             selectattr('6', 'defined') |
-             map('first') |
-             list }}
+          {{
+            passwd_output.stdout_lines
+            | map('split', ':')
+            | selectattr('6', 'search', '^/bin/(bash|sh|zsh)$')
+            | selectattr('2', 'int') | selectattr('2', '>=', 1000)  # Exclude system users
+            | map('first')
+            | reject('equalto', 'root')
+            | list
+          }}
 
     - name: Set inactivity lock to 30 days for each user
       command: "chage --inactive 30 {{ item }}"
       loop: "{{ real_users }}"
-      when: item not in ['root']
