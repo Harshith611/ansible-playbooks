@@ -2,9 +2,10 @@
 - name: CIS 5.1.1.3 & 5.1.1.5 – Configure journald and rsyslog logging
   hosts: all
   become: true
+
   tasks:
 
-    - 5.1.1.3 name: Ensure journald forwards logs to rsyslog
+    - name: "5.1.1.3 - Ensure journald forwards logs to rsyslog"
       copy:
         dest: /etc/systemd/journald.conf.d/50-journald_forward.conf
         content: |
@@ -15,8 +16,8 @@
         mode: '0644'
         backup: yes
       notify: Restart journald
-      
-    - name: 5.1.1.5 Create rsyslog config file with secure log rules
+
+    - name: "5.1.1.5 - Create rsyslog config file with secure log rules"
       copy:
         dest: /etc/rsyslog.d/50-cis-logging.conf
         content: |
