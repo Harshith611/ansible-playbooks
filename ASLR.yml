@@ -1,0 +1,29 @@
+---
+- name: Ensure ASLR (Address Space Layout Randomization) is enabled
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Ensure ASLR config is set in /etc/sysctl.d/60-kernel_sysctl.conf
+      lineinfile:
+        path: /etc/sysctl.d/60-kernel_sysctl.conf
+        regexp: '^kernel\.randomize_va_space'
+        line: 'kernel.randomize_va_space = 2'
+        create: yes
+        mode: '0644'
+
+    - name: Apply kernel parameter for ASLR
+      sysctl:
+        name: kernel.randomize_va_space
+        value: '2'
+        state: present
+        sysctl_set: yes
+        reload: yes
+
+    - name: Verify ASLR is set correctly in running configuration
+      command: sysctl kernel.randomize_va_space
+      register: aslr_status
+
+    - name: Show ASLR setting in runtime
+      debug:
+        var: aslr_status.stdout
