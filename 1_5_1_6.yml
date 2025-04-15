@@ -1,24 +1,26 @@
 ---
-- name: Ensure no unconfined services exist
+- name: "CIS 1.5.1.6 | Ensure no unconfined services exist"
   hosts: all
   become: true
+  gather_facts: false
+
   tasks:
 
-    - name: Check for unconfined services (using ps and SELinux context)
+    - name: "Run CIS check command to find unconfined services"
       shell: |
-        ps -eZ | grep -E 'unconfined_service_t|unconfined_t' || true
-      register: unconfined_services
+        /bin/ps -eZ | /bin/grep unconfined_service_t | /bin/awk -F: '{ print $NF } END {if (NR == 0) print "none"}'
+      register: unconfined_check_output
       changed_when: false
 
-    - name: Fail if unconfined services are found
+    - name: "Fail if unconfined services are found (CIS 1.5.1.6)"
       fail:
         msg: |
-          Unconfined services detected!
-          These processes are running without proper SELinux confinement:
-          {{ unconfined_services.stdout_lines }}
-      when: unconfined_services.stdout != ""
+          CIS 1.5.1.6 FAILED: Unconfined services detected!
+          Output from check:
+          {{ unconfined_check_output.stdout }}
+      when: unconfined_check_output.stdout != "none"
 
-    - name: Print success message
+    - name: "CIS 1.5.1.6 PASSED: No unconfined services found"
       debug:
-        msg: "No unconfined services detected. SELinux confinement is in place."
-      when: unconfined_services.stdout == ""
+        msg: "CIS 1.5.1.6 PASSED: No unconfined services running."
+      when: unconfined_check_output.stdout == "none"
