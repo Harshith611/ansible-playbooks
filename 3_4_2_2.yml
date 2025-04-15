@@ -1,0 +1,30 @@
+---
+- name: Ensure loopback protection is configured properly
+  hosts: all
+  become: yes
+  gather_facts: false
+
+  tasks:
+
+    - name: Ensure loopback interface accepts traffic
+      ansible.builtin.shell: |
+        nft add rule inet filter input iif "lo" accept
+      ignore_errors: true
+
+    - name: Drop IPv4 traffic from loopback not using lo
+      ansible.builtin.shell: |
+        nft add rule inet filter input ip saddr 127.0.0.0/8 iifname != "lo" counter drop
+      ignore_errors: true
+
+    - name: Drop IPv6 traffic from loopback not using lo
+      ansible.builtin.shell: |
+        nft add rule inet filter input ip6 saddr ::1 iifname != "lo" counter drop
+      ignore_errors: true
+
+    - name: Show updated ruleset (for verification)
+      ansible.builtin.command: nft list ruleset
+      register: ruleset_output
+
+    - name: Print ruleset output
+      debug:
+        var: ruleset_output.stdout
