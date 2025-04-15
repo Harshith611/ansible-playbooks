@@ -1,0 +1,51 @@
+---
+- name: Harden cron file and directory permissions (CIS 4.1.1.x)
+  hosts: all
+  become: yes
+  tasks:
+    - name: Ensure /etc/crontab has correct ownership and 0600 permissions
+      file:
+        path: /etc/crontab
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Ensure /etc/cron.hourly has correct permissions
+      file:
+        path: /etc/cron.hourly
+        owner: root
+        group: root
+        mode: '0700'
+        state: directory
+
+    - name: Ensure /etc/cron.daily has correct permissions
+      file:
+        path: /etc/cron.daily
+        owner: root
+        group: root
+        mode: '0700'
+        state: directory
+
+    - name: Ensure /etc/cron.weekly has correct permissions
+      file:
+        path: /etc/cron.weekly
+        owner: root
+        group: root
+        mode: '0700'
+        state: directory
+
+    - name: Ensure /etc/cron.monthly has correct permissions
+      file:
+        path: /etc/cron.monthly
+        owner: root
+        group: root
+        mode: '0700'
+        state: directory
+
+    - name: Ensure /etc/cron.d has correct permissions
+      file:
+        path: /etc/cron.d
+        owner: root
+        group: root
+        mode: '0700'
+        state: directory
