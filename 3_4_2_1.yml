@@ -1,0 +1,43 @@
+---
+- name: "CIS 3.4.2.1 | Ensure nftables base chains exist in inet table"
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    nft_table_name: filter
+    nft_table_family: inet
+    base_chains:
+      - { name: input,   hook: input }
+      - { name: forward, hook: forward }
+      - { name: output,  hook: output }
+
+  tasks:
+
+    - name: "Check if inet filter table exists"
+      shell: "nft list table inet {{ nft_table_name }}"
+      register: table_check
+      failed_when: false
+      changed_when: false
+
+    - name: "Create inet filter table if missing"
+      shell: "nft add table inet {{ nft_table_name }}"
+      when: "'table' not in table_check.stdout"
+      changed_when: true
+
+    - name: "Ensure inet base chain '{{ item.name }}' with hook '{{ item.hook }}' exists"
+      shell: >
+        nft list chain inet {{ nft_table_name }} {{ item.name }} ||
+        nft add chain inet {{ nft_table_name }} {{ item.name }}
+        { type filter hook {{ item.hook }} priority 0 \; }
+      with_items: "{{ base_chains }}"
+      changed_when: true
+
+    - name: "Show final nftables ruleset (for verification)"
+      shell: "nft list ruleset"
+      register: final_ruleset
+      changed_when: false
+
+    - name: "Print current nftables ruleset"
+      debug:
+        msg: "{{ final_ruleset.stdout }}"
