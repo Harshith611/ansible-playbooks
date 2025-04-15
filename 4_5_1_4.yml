@@ -11,19 +11,20 @@
       command: getent passwd
       register: passwd_output
 
-    - name: Filter real users (excluding system users)
+    - name: Filter real users (UID >= 1000) with valid shells
       set_fact:
-        real_users: >-
-          {{
-            passwd_output.stdout_lines
-            | map('split', ':')
-            | selectattr('6', 'search', '^/bin/(bash|sh|zsh)$')
-            | selectattr('2', 'int')
-            | selectattr('2', '>=', 1000)
-            | map('first')
-            | reject('equalto', 'root')
-            | list
-          }}
+        real_users: []
+
+    - name: Parse and filter users
+      set_fact:
+        real_users: "{{ real_users + [user_fields[0]] }}"
+      loop: "{{ passwd_output.stdout_lines }}"
+      vars:
+        user_fields: "{{ item.split(':') }}"
+      when:
+        - user_fields[6] is search('^/bin/(bash|sh|zsh)$')
+        - user_fields[2] | int >= 1000
+        - user_fields[0] != 'root'
 
     - name: Set inactivity lock to 30 days for each user
       command: "chage --inactive 30 {{ item }}"
