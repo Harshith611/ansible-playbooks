@@ -18,7 +18,8 @@
             passwd_output.stdout_lines
             | map('split', ':')
             | selectattr('6', 'search', '^/bin/(bash|sh|zsh)$')
-            | selectattr('2', 'int') | selectattr('2', '>=', 1000)  # Exclude system users
+            | selectattr('2', 'int')
+            | selectattr('2', '>=', 1000)
             | map('first')
             | reject('equalto', 'root')
             | list
