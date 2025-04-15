@@ -1,0 +1,50 @@
+---
+- name: Ensure secure permissions on cron-related files and directories
+  hosts: all
+  become: true
+  tasks:
+    - name: Ensure permissions on /etc/crontab are correctly set
+      ansible.builtin.file:
+        path: /etc/crontab
+        owner: root
+        group: root
+        mode: '0600'
+      tags: crontab
+
+    - name: Validate /etc/crontab ownership and permissions
+      stat:
+        path: /etc/crontab
+      register: crontab_stat
+
+    - name: Assert /etc/crontab permissions and ownership are correct
+      assert:
+        that:
+          - crontab_stat.stat.pw_name == 'root'
+          - crontab_stat.stat.gr_name == 'root'
+          - crontab_stat.stat.mode | string is match("0600")
+        fail_msg: "/etc/crontab permissions or ownership are incorrect"
+        success_msg: "/etc/crontab is correctly secured"
+      tags: crontab
+
+    - name: Ensure permissions on /etc/cron.hourly are correctly set
+      ansible.builtin.file:
+        path: /etc/cron.hourly
+        owner: root
+        group: root
+        mode: '0700'
+      tags: cron_hourly
+
+    - name: Validate /etc/cron.hourly ownership and permissions
+      stat:
+        path: /etc/cron.hourly
+      register: cron_hourly_stat
+
+    - name: Assert /etc/cron.hourly permissions and ownership are correct
+      assert:
+        that:
+          - cron_hourly_stat.stat.pw_name == 'root'
+          - cron_hourly_stat.stat.gr_name == 'root'
+          - cron_hourly_stat.stat.mode | string is match("0700")
+        fail_msg: "/etc/cron.hourly permissions or ownership are incorrect"
+        success_msg: "/etc/cron.hourly is correctly secured"
+      tags: cron_hourly
