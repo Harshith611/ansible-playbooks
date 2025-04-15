@@ -1,69 +1,48 @@
 ---
-- name: Harden SSHD according to CIS benchmark
+- name: Harden SSH Configuration Based on CIS Benchmark
   hosts: all
-  become: true
+  become: yes
+
   tasks:
 
-    - name: Backup original sshd_config
+    - name: Ensure OpenSSH is installed
+      package:
+        name: openssh-server
+        state: present
+
+    - name: Backup current sshd_config
       copy:
         src: /etc/ssh/sshd_config
         dest: /etc/ssh/sshd_config.bak
         remote_src: yes
-        backup: yes
+        owner: root
+        group: root
+        mode: '0600'
 
-    - name: Ensure required KexAlgorithms are set and weak ones removed
-      lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^KexAlgorithms'
-        line: >
-          KexAlgorithms ecdh-sha2-nistp256,ecdh-sha2-nistp384,
-          ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,
-          diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,
-          diffie-hellman-group14-sha256,
-          -diffie-hellman-group1-sha1,
-          -diffie-hellman-group14-sha1,
-          -diffie-hellman-group-exchange-sha1
-        insertafter: BOF
-        state: present
-
-    - name: Ensure LoginGraceTime is set to 60 seconds
-      lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^LoginGraceTime'
-        line: 'LoginGraceTime 60'
-        insertafter: BOF
-        state: present
-
-    - name: Ensure only strong MACs are configured and weak ones removed
+    - name: Set strong MACs
       lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^MACs'
-        line: >
-          MACs hmac-sha2-512,hmac-sha2-256,hmac-sha2-512-etm@openssh.com,
-          hmac-sha2-256-etm@openssh.com,hmac-sha1
-          -hmac-md5,-hmac-md5-96,-hmac-ripemd160,
-          -hmac-sha1-96,-umac-64@openssh.com,
-          -umac-64-etm@openssh.com,-hmac-md5-etm@openssh.com,
-          -hmac-md5-96-etm@openssh.com,-hmac-ripemd160-etm@openssh.com,
-          -hmac-sha1-96-etm@openssh.com
-        insertafter: BOF
+        line: 'MACs hmac-sha2-256-etm@openssh.com,hmac-sha1'
         state: present
+        insertafter: EOF
+        create: yes
+        backup: yes
 
-    - name: Ensure MaxAuthTries is set to 4
-      lineinfile:
+    - name: Ensure permissions on sshd_config are correct
+      file:
         path: /etc/ssh/sshd_config
-        regexp: '^MaxAuthTries'
-        line: 'MaxAuthTries 4'
-        insertafter: BOF
-        state: present
+        owner: root
+        group: root
+        mode: '0600'
 
-    - name: Validate sshd config before restart
+    - name: Validate SSH configuration
       command: /usr/sbin/sshd -t
       register: sshd_check
       failed_when: sshd_check.rc != 0
       changed_when: false
 
-    - name: Restart sshd service
+    - name: Restart SSH service
       service:
         name: sshd
         state: restarted
