@@ -1,0 +1,37 @@
+---
+- name: "4.5.3.2 Ensure default user shell timeout is configured"
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Remove any incorrect TMOUT settings from /etc/profile
+      lineinfile:
+        path: /etc/profile
+        regexp: '^.*TMOUT=.*$'
+        state: absent
+      tags: remove_old
+
+    - name: Remove any incorrect TMOUT settings from /etc/bashrc
+      lineinfile:
+        path: /etc/bashrc
+        regexp: '^.*TMOUT=.*$'
+        state: absent
+      tags: remove_old
+
+    - name: Remove incorrect TMOUT entries from /etc/profile.d/*.sh
+      shell: "sed -i '/TMOUT/d' {{ item }}"
+      loop: "{{ lookup('ansible.builtin.fileglob', '/etc/profile.d/*.sh', wantlist=True) }}"
+      when: item is file
+      tags: remove_old
+
+    - name: Create secure shell timeout config
+      copy:
+        dest: /etc/profile.d/timeout.sh
+        content: |
+          TMOUT=900
+          readonly TMOUT
+          export TMOUT
+        owner: root
+        group: root
+        mode: '0644'
+      tags: set_tmout
