@@ -1,5 +1,5 @@
 ---
-- name:4.5.3.3 Ensure default user umask is configured securely
+- name: 4.5.3.3 Ensure default user umask is configured securely
   hosts: all
   become: true
   tasks:
