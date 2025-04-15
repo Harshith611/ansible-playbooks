@@ -1,0 +1,26 @@
+---
+- name: "4.5.1.4 Ensure inactive password lock is 30 days or less"
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Set default inactivity period for new users to 30 days
+      command: useradd -D -f 30
+
+    - name: Get all local users with valid shells
+      command: getent passwd
+      register: passwd_output
+
+    - name: Filter real users (excluding system users)
+      set_fact:
+        real_users: >-
+          {{ passwd_output.stdout_lines | selectattr('split(":")[6]', 'search', '^/bin/.*sh$') |
+             map('split', ':') |
+             selectattr('6', 'defined') |
+             map('first') |
+             list }}
+
+    - name: Set inactivity lock to 30 days for each user
+      command: "chage --inactive 30 {{ item }}"
+      loop: "{{ real_users }}"
+      when: item not in ['root']
