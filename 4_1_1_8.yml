@@ -1,0 +1,50 @@
+---
+- name: "CIS 4.1.1.8 | Restrict crontab to authorized users"
+  hosts: all
+  become: true
+  vars:
+    cron_allow_file: /etc/cron.allow
+    cron_deny_file: /etc/cron.deny
+    cron_authorized_users:
+      - root   # Add authorized usernames here
+
+  tasks:
+
+    - name: "Ensure /etc/cron.allow exists"
+      file:
+        path: "{{ cron_allow_file }}"
+        state: touch
+        owner: root
+        group: root
+        mode: '0640'
+
+    - name: "Ensure authorized users are listed in /etc/cron.allow"
+      lineinfile:
+        path: "{{ cron_allow_file }}"
+        create: yes
+        line: "{{ item }}"
+        state: present
+      loop: "{{ cron_authorized_users }}"
+      notify: Deduplicate cron.allow
+
+    - name: "Ensure correct permissions on /etc/cron.allow"
+      file:
+        path: "{{ cron_allow_file }}"
+        owner: root
+        group: root
+        mode: '0640'
+
+    - name: "Ensure correct permissions on /etc/cron.deny if it exists"
+      file:
+        path: "{{ cron_deny_file }}"
+        state: file
+        owner: root
+        group: root
+        mode: '0640'
+      when: ansible_facts['os_family'] in ['Debian', 'RedHat', 'Rocky', 'AlmaLinux', 'SUSE']
+      ignore_errors: yes
+
+  handlers:
+    - name: Deduplicate cron.allow
+      shell: |
+        sort -u {{ cron_allow_file }} -o {{ cron_allow_file }}
