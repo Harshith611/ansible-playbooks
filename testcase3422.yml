@@ -4,15 +4,15 @@
   become: yes
   tasks:
 
-    - name: Check for loopback accept rule
-      ansible.builtin.command: nft list chain inet filter input
+    - name: Check for loopback rules in inet filter input chain
+      command: nft list chain inet filter input
       register: nft_input_chain
 
     - name: Validate loopback rules exist
-      ansible.builtin.assert:
+      assert:
         that:
-          - '"iif \\"lo\\" accept" in nft_input_chain.stdout'
-          - '"ip saddr 127.0.0.0/8 iifname != \\"lo\\" drop" in nft_input_chain.stdout'
-          - '"ip6 saddr ::1 iifname != \\"lo\\" drop" in nft_input_chain.stdout'
+          - "'iif \"lo\" accept' in nft_input_chain.stdout"
+          - "'ip saddr 127.0.0.0/8 iifname != \"lo\" drop' in nft_input_chain.stdout"
+          - "'ip6 saddr ::1 iifname != \"lo\" drop' in nft_input_chain.stdout"
         fail_msg: "One or more loopback nftables rules are missing!"
         success_msg: "All required loopback nftables rules are present."
