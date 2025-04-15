@@ -29,6 +29,22 @@
         create: yes
         backup: yes
 
+    - name: Set strong KexAlgorithms (no trailing comma)
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^KexAlgorithms'
+        line: 'KexAlgorithms ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256'
+        state: present
+        insertafter: EOF
+
+    - name: Set strong Ciphers (optional hardening)
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^Ciphers'
+        line: 'Ciphers aes256-ctr,aes192-ctr,aes128-ctr'
+        state: present
+        insertafter: EOF
+
     - name: Ensure permissions on sshd_config are correct
       file:
         path: /etc/ssh/sshd_config
