@@ -1,0 +1,68 @@
+---
+- name:4.5.3.3 Ensure default user umask is configured securely
+  hosts: all
+  become: true
+  tasks:
+    - name: Remove any incorrect umask settings from /etc/profile
+      lineinfile:
+        path: /etc/profile
+        regexp: '^umask'
+        state: absent
+      notify: Add correct umask to /etc/profile
+
+    - name: Remove any incorrect umask settings from /etc/bashrc
+      lineinfile:
+        path: /etc/bashrc
+        regexp: '^umask'
+        state: absent
+      notify: Add correct umask to /etc/bashrc
+
+    - name: Remove any incorrect UMASK settings from /etc/login.defs
+      lineinfile:
+        path: /etc/login.defs
+        regexp: '^UMASK'
+        state: absent
+      notify: Add correct UMASK to /etc/login.defs
+
+    - name: Ensure a restrictive umask is set in /etc/profile.d/50-systemwide_umask.sh
+      copy:
+        dest: /etc/profile.d/50-systemwide_umask.sh
+        content: "umask 027\n"
+        mode: '0644'
+        owner: root
+        group: root
+      notify: Ensure umask is set correctly
+
+  handlers:
+    - name: Add correct umask to /etc/profile
+      lineinfile:
+        path: /etc/profile
+        line: 'umask 027'
+        create: yes
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Add correct umask to /etc/bashrc
+      lineinfile:
+        path: /etc/bashrc
+        line: 'umask 027'
+        create: yes
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Add correct UMASK to /etc/login.defs
+      lineinfile:
+        path: /etc/login.defs
+        line: 'UMASK 027'
+        create: yes
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Ensure umask is set correctly
+      command: "umask"
+      register: umask_output
+      failed_when: umask_output.stdout != '027'
+      changed_when: false
