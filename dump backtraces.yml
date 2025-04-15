@@ -1,0 +1,24 @@
+---
+- name: Ensure core dump backtraces are disabled
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Ensure /etc/systemd/coredump.conf.d directory exists
+      file:
+        path: /etc/systemd/coredump.conf.d
+        state: directory
+        mode: '0755'
+
+    - name: Disable core dump backtraces via ProcessSizeMax=0
+      copy:
+        dest: /etc/systemd/coredump.conf.d/99-disable-coredump.conf
+        content: |
+          [Coredump]
+          ProcessSizeMax=0
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Reload systemd settings
+      command: systemctl daemon-reexec
