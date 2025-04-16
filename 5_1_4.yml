@@ -1,0 +1,36 @@
+---
+- name: CIS 5.1.4 – Ensure all logfiles have appropriate access configured
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Find all log files in /var/log with wrong perms/ownership
+      find:
+        paths: /var/log
+        recurse: yes
+        file_type: file
+        excludes: ['README']
+      register: log_files
+
+    - name: Fix permissions on /var/log files
+      block:
+        - name: Set file permissions to 0640 if more permissive
+          file:
+            path: "{{ item.path }}"
+            mode: '0640'
+          when: item.mode is version('0640', '>')
+          loop: "{{ log_files.files }}"
+
+        - name: Ensure file owner is root
+          file:
+            path: "{{ item.path }}"
+            owner: root
+          when: item.uid != 0
+          loop: "{{ log_files.files }}"
+
+        - name: Ensure file group is root or adm
+          file:
+            path: "{{ item.path }}"
+            group: root
+          when: item.gid not in [0, lookup('ansible.builtin.group', 'adm').gid | default(-1)]
+          loop: "{{ log_files.files }}"
