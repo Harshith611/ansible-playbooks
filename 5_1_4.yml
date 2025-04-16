@@ -18,7 +18,7 @@
           file:
             path: "{{ item.path }}"
             mode: '0640'
-          when: item.mode | int > 640
+          when: item.mode is version('0640', '>')
           loop: "{{ log_files.files }}"
 
         - name: Ensure file owner is root
@@ -32,5 +32,5 @@
           file:
             path: "{{ item.path }}"
             group: root
-          when: item.grp not in ['root', 'adm']
+          when: item.group not in ['root', 'adm']
           loop: "{{ log_files.files }}"
