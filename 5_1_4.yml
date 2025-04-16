@@ -8,28 +8,33 @@
         paths: /var/log
         recurse: yes
         file_type: file
-        excludes: ['README']
       register: log_files
+
+    - name: Get file details using stat
+      stat:
+        path: "{{ item.path }}"
+      loop: "{{ log_files.files }}"
+      register: file_stats
 
     - name: Fix permissions and ownership on /var/log files
       block:
         - name: Set file permissions to 0640 if more permissive
           file:
-            path: "{{ item.path }}"
+            path: "{{ item.item.path }}"
             mode: '0640'
-          when: item.mode is version('0640', '>')
-          loop: "{{ log_files.files }}"
+          when: item.stat.mode is version('0640', '>')
+          loop: "{{ file_stats.results }}"
 
         - name: Ensure file owner is root
           file:
-            path: "{{ item.path }}"
+            path: "{{ item.item.path }}"
             owner: root
-          when: item.uid != 0
-          loop: "{{ log_files.files }}"
+          when: item.stat.pw_name != 'root'
+          loop: "{{ file_stats.results }}"
 
         - name: Ensure file group is root or adm
           file:
-            path: "{{ item.path }}"
+            path: "{{ item.item.path }}"
             group: root
-          when: item.group not in ['root', 'adm']
-          loop: "{{ log_files.files }}"
+          when: item.stat.gr_name not in ['root', 'adm']
+          loop: "{{ file_stats.results }}"
