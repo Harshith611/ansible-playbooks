@@ -3,7 +3,6 @@
   hosts: all
   become: true
   tasks:
-
     - name: Find all log files in /var/log
       find:
         paths: /var/log
