@@ -1,45 +1,36 @@
 ---
 - name: Ensure AIDE is installed and scheduled
   hosts: all
-  become: yes
+  become: true
   tasks:
 
-    # Step 1: Check if AIDE is installed
     - name: Check if AIDE is installed
       command: which aide
-      register: aide_check
-      failed_when: false
-      changed_when: false
+      register: aide_path
+      ignore_errors: yes
+
+    - name: Fail if AIDE is not installed
+      fail:
+        msg: "AIDE is not installed and could not be installed. Please install AIDE manually and rerun the playbook."
+      when: aide_path.stdout == ""
 
     - name: Install AIDE if not installed (for RedHat-based systems)
-      yum:
+      package:
         name: aide
         state: present
-      when: aide_check.rc != 0 and ansible_facts.os_family == "RedHat"
+      when: aide_path.stdout == ""
+      notify:
+        - Reload systemd
 
     - name: Install AIDE if not installed (for Debian-based systems)
       apt:
         name: aide
         state: present
-      when: aide_check.rc != 0 and ansible_facts.os_family == "Debian"
+      when: aide_path.stdout == ""
+      notify:
+        - Reload systemd
 
-    - name: Fail if AIDE is not installed
-      fail:
-        msg: "AIDE is not installed and could not be installed. Please install AIDE manually and rerun the playbook."
-      when: aide_check.rc != 0
-
-    # Step 2: Setup cron job for AIDE check
-    - name: Add cron job to run AIDE check every day at 5AM
-      cron:
-        name: "AIDE Check"
-        minute: "0"
-        hour: "5"
-        job: "/usr/sbin/aide --check"
-        user: root
-        state: present
-
-    # Step 3: Alternatively, create systemd service and timer
-    - name: Create aidecheck.service file for systemd
+    - name: Create AIDE systemd service
       copy:
         dest: /etc/systemd/system/aidecheck.service
         content: |
@@ -52,12 +43,10 @@
 
           [Install]
           WantedBy=multi-user.target
-        owner: root
-        group: root
         mode: '0644'
-      notify: reload systemd
+      when: aide_path.stdout != ""
 
-    - name: Create aidecheck.timer file for systemd
+    - name: Create AIDE systemd timer
       copy:
         dest: /etc/systemd/system/aidecheck.timer
         content: |
@@ -70,28 +59,38 @@
 
           [Install]
           WantedBy=multi-user.target
-        owner: root
-        group: root
         mode: '0644'
-      notify: reload systemd
+      when: aide_path.stdout != ""
 
-    # Step 4: Reload systemd and enable the timer and service
     - name: Reload systemd configuration
       systemd:
         daemon_reload: yes
       notify:
-        - enable aidecheck.service
-        - enable aidecheck.timer
+        - Enable AIDE service and timer
 
-  handlers:
-    - name: enable aidecheck.service
+    - name: Enable and start AIDE service
       systemd:
         name: aidecheck.service
         enabled: yes
         state: started
+      when: aide_path.stdout != ""
 
-    - name: enable aidecheck.timer
+    - name: Enable and start AIDE timer
       systemd:
         name: aidecheck.timer
         enabled: yes
         state: started
+      when: aide_path.stdout != ""
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable AIDE service and timer
+      systemd:
+        name: aidecheck.service
+        enabled: yes
+        state: started
+      notify:
+        - Enable AIDE timer
