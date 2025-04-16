@@ -1,0 +1,64 @@
+---
+- name: "CIS 5.1.3 – Ensure logrotate is configured"
+  hosts: all
+  become: true
+
+  tasks:
+
+    - name: "Ensure logrotate is installed"
+      package:
+        name: logrotate
+        state: present
+
+    - name: "Configure /etc/logrotate.conf"
+      copy:
+        dest: /etc/logrotate.conf
+        content: |
+          weekly
+          rotate 4
+          create
+          include /etc/logrotate.d
+          compress
+          delaycompress
+          notifempty
+          missingok
+          su root root
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+
+    - name: "Ensure /etc/logrotate.d/syslog exists with secure settings"
+      copy:
+        dest: /etc/logrotate.d/syslog
+        content: |
+          /var/log/cron
+          /var/log/maillog
+          /var/log/messages
+          /var/log/secure
+          /var/log/spooler
+          /var/log/boot.log
+          /var/log/wtmp
+          {
+              missingok
+              notifempty
+              compress
+              delaycompress
+              sharedscripts
+              postrotate
+                  /bin/kill -HUP `cat /var/run/rsyslogd.pid 2>/dev/null` 2>/dev/null || true
+              endscript
+          }
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+
+    - name: "Force logrotate dry run (validate config)"
+      command: logrotate -d /etc/logrotate.conf
+      register: dryrun_output
+      changed_when: false
+
+    - name: "Show dry run result"
+      debug:
+        var: dryrun_output.stdout_lines
