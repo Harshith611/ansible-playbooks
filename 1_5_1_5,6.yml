@@ -1,0 +1,74 @@
+---
+- name: Ensure SELinux is Enforcing & No Unconfined Services Exist (CIS 1.5.1.5 & 1.5.1.6)
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    # === CIS 1.5.1.5 - SELinux Enforcing ===
+
+    - name: "[CIS 1.5.1.5] Check current SELinux mode"
+      command: /sbin/getenforce
+      register: selinux_mode
+      changed_when: false
+      ignore_errors: yes
+
+    - name: "[CIS 1.5.1.5] Print current SELinux mode"
+      debug:
+        msg: "Current SELinux mode: {{ selinux_mode.stdout | default('Unknown') }}"
+
+    - name: "[CIS 1.5.1.5] Set SELinux to Enforcing if not already"
+      command: setenforce 1
+      when: selinux_mode.stdout != "Enforcing"
+      ignore_errors: yes
+
+    - name: "[CIS 1.5.1.5] Backup /etc/selinux/config if not already backed up"
+      copy:
+        src: /etc/selinux/config
+        dest: "/etc/selinux/config.bak_{{ ansible_date_time.iso8601 }}"
+        remote_src: yes
+        backup: yes
+      when: selinux_mode.stdout != "Enforcing"
+
+    - name: "[CIS 1.5.1.5] Ensure SELINUX=enforcing is set in /etc/selinux/config"
+      replace:
+        path: /etc/selinux/config
+        regexp: '^(SELINUX\s*=\s*)(permissive|disabled)'
+        replace: '\1enforcing'
+
+    - name: "[CIS 1.5.1.5] Validate SELINUX=enforcing in /etc/selinux/config"
+      shell: grep -Ei '^SELINUX\s*=\s*enforcing$' /etc/selinux/config
+      register: config_check
+      failed_when: config_check.rc != 0
+      changed_when: false
+
+    - name: "[CIS 1.5.1.5] Final SELinux status check"
+      command: /sbin/getenforce
+      register: final_selinux_status
+      changed_when: false
+
+    - name: "[CIS 1.5.1.5] Show final SELinux mode"
+      debug:
+        msg: "Final SELinux mode: {{ final_selinux_status.stdout | default('Unknown') }}"
+
+    # === CIS 1.5.1.6 - No Unconfined Services ===
+
+    - name: "[CIS 1.5.1.6] Check for unconfined services"
+      shell: |
+        /bin/ps -eZ | /bin/grep unconfined_service_t | /bin/awk -F: '{ print $NF } END {if (NR == 0) print "none"}'
+      register: unconfined_check_output
+      changed_when: false
+
+    - name: "[CIS 1.5.1.6] Fail if unconfined services are found"
+      fail:
+        msg: |
+          CIS 1.5.1.6 FAILED: Unconfined services detected!
+          Output:
+          {{ unconfined_check_output.stdout }}
+      when: unconfined_check_output.stdout != "none"
+
+    - name: "[CIS 1.5.1.6] PASS - No unconfined services running"
+      debug:
+        msg: "CIS 1.5.1.6 PASSED: No unconfined services running."
+      when: unconfined_check_output.stdout == "none"
