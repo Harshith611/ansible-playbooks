@@ -1,0 +1,81 @@
+---
+- name: CIS 2.2.18 - Ensure web server services are not in use
+  hosts: all
+  become: true
+  vars:
+    services_to_check:
+      - httpd
+      - nginx
+    backup_dir: "/var/backups/cis_webserver_{{ ansible_date_time.iso8601_basic_short }}"
+
+  tasks:
+
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Backup systemd service files if present
+      shell: |
+        for svc in httpd nginx; do
+          if systemctl list-unit-files | grep -q "${svc}.service"; then
+            cp /usr/lib/systemd/system/${svc}.service {{ backup_dir }}/ || true
+          fi
+        done
+      args:
+        executable: /bin/bash
+
+    - name: Stop web server services if they exist
+      service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: no
+      loop:
+        - httpd
+        - nginx
+        - httpd.socket
+      ignore_errors: true
+
+    - name: Mask web server services
+      systemd:
+        name: "{{ item }}"
+        masked: yes
+      loop:
+        - httpd
+        - nginx
+        - httpd.socket
+      ignore_errors: true
+
+    - name: Check if httpd is needed for dependency
+      shell: "rpm -q --whatrequires httpd || echo 'no-dependency'"
+      register: httpd_dependency_check
+      changed_when: false
+
+    - name: Remove httpd if not required by dependency
+      dnf:
+        name: httpd
+        state: absent
+      when: "'no-dependency' in httpd_dependency_check.stdout"
+
+    - name: Check if nginx is installed
+      shell: "rpm -q nginx || echo 'not-installed'"
+      register: nginx_check
+      changed_when: false
+
+    - name: Remove nginx if installed
+      dnf:
+        name: nginx
+        state: absent
+      when: "'not-installed' not in nginx_check.stdout"
+
+    - name: Confirm service masking
+      shell: |
+        for svc in httpd nginx httpd.socket; do
+          systemctl is-enabled --quiet $svc && echo "$svc is enabled" || echo "$svc is disabled or masked"
+        done
+      register: mask_check
+
+    - name: Print final service state summary
+      debug:
+        msg: "{{ mask_check.stdout_lines }}"
