@@ -1,0 +1,36 @@
+---
+- name: CIS 2.3.4 - Ensure Telnet client is not installed
+  hosts: all
+  become: true
+  vars:
+    telnet_pkg: telnet
+
+  tasks:
+
+    - name: Check if telnet client is installed
+      shell: rpm -q {{ telnet_pkg }}
+      register: telnet_installed
+      changed_when: false
+      failed_when: false
+
+    - name: Backup RPM info before removing telnet
+      shell: "rpm -qi {{ telnet_pkg }} > /var/backups/{{ telnet_pkg }}_rpm_info_$(date +%F_%T).bak"
+      when: telnet_installed.rc == 0
+      tags: backup
+
+    - name: Remove telnet client if installed (command fallback)
+      command: "dnf -y remove {{ telnet_pkg }}"
+      register: telnet_remove_result
+      changed_when: "'Complete!' in telnet_remove_result.stdout"
+      when: telnet_installed.rc == 0
+      tags: removal
+
+    - name: Log Telnet removal status
+      debug:
+        msg: >
+          {{
+            'Telnet client removed successfully'
+            if telnet_remove_result.changed else
+            'Telnet client not present or already removed'
+          }}
+      tags: logging
