@@ -1,0 +1,62 @@
+---
+- name: CIS 2.2.20 - Ensure X Window System is not in use
+  hosts: all
+  become: true
+  vars:
+    xorg_package: "xorg-x11-server-common"
+    backup_dir: "/var/backups/cis_xorg_{{ ansible_date_time.iso8601_basic_short }}"
+    approved_gui_required: false  # Set to true if GUI is approved by org policy
+
+  tasks:
+
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Check if {{ xorg_package }} is installed
+      shell: "rpm -q {{ xorg_package }} || echo not-installed"
+      register: xorg_installed
+      changed_when: false
+
+    - name: Check if GDM is installed
+      shell: "rpm -q gdm || echo not-installed"
+      register: gdm_check
+      changed_when: false
+
+    - name: Log package presence
+      debug:
+        msg: >
+          Xorg status: {{ xorg_installed.stdout }},
+          GDM status: {{ gdm_check.stdout }},
+          GUI policy approved: {{ approved_gui_required }}
+
+    - name: Take snapshot of installed X11-related packages (for audit)
+      shell: "rpm -qa | grep xorg-x11 > {{ backup_dir }}/installed_xorg_packages.txt || true"
+      args:
+        executable: /bin/bash
+
+    - name: Take backup of xorg config directory (if it exists)
+      shell: |
+        set -e
+        if [ -d /etc/X11 ]; then
+          cp -a /etc/X11 {{ backup_dir }}/
+        fi
+      args:
+        executable: /bin/bash
+
+    - name: Remove {{ xorg_package }} if not approved and not required by GDM
+      yum:
+        name: "{{ xorg_package }}"
+        state: absent
+      when:
+        - "'not-installed' not in xorg_installed.stdout"
+        - "'not-installed' in gdm_check.stdout"
+        - not approved_gui_required
+
+    - name: Final report
+      debug:
+        msg: >
+          If {{ xorg_package }} was installed and not required by GDM,
+          it has been removed. Backup stored at: {{ backup_dir }}
