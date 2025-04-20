@@ -1,69 +1,46 @@
+---
 - name: CIS 2.2.9 - Ensure NFS services are not in use
   hosts: all
   become: true
   vars:
-    backup_dir: "/var/backups/cis_nfs_{{ ansible_date_time.iso8601_basic_short }}"
-    nfs_service: "nfs-server"
-    nfs_package: "nfs-utils"
+    nfs_service: nfs-server.service
+    nfs_pkg: nfs-utils
 
   tasks:
 
-    - name: Create backup directory
-      file:
-        path: "{{ backup_dir }}"
-        state: directory
-        mode: '0755'
+    - name: Backup service unit file if it exists
+      copy:
+        src: "/usr/lib/systemd/system/{{ nfs_service }}"
+        dest: "/root/{{ nfs_service }}.bak"
+        remote_src: true
+      when: ansible_facts.services[nfs_service] is defined
+      ignore_errors: true
 
-    - name: Check if nfs-server service is active
-      shell: systemctl is-active {{ nfs_service }} || echo "inactive"
-      register: nfs_active_check
+    - name: Check if nfs-utils is installed
+      shell: rpm -q {{ nfs_pkg }}
+      register: nfs_installed
       changed_when: false
+      failed_when: false
 
-    - name: Check if nfs-server service is enabled
-      shell: systemctl is-enabled {{ nfs_service }} || echo "disabled"
-      register: nfs_enabled_check
-      changed_when: false
-
-    - name: Check what requires nfs-utils
-      shell: "rpm -q --whatrequires {{ nfs_package }} || echo 'no-dependency'"
-      register: nfs_dependency_check
-      changed_when: false
-
-    - name: Backup systemd unit for nfs-server if it exists
-      shell: |
-        if [ -f /usr/lib/systemd/system/{{ nfs_service }}.service ]; then
-          cp /usr/lib/systemd/system/{{ nfs_service }}.service {{ backup_dir }}/
-        fi
-      args:
-        executable: /bin/bash
-
-    - name: Stop nfs-server service
-      service:
-        name: "{{ nfs_service }}"
-        state: stopped
-      when: "'active' in nfs_active_check.stdout"
-
-    - name: Mask nfs-server service (fallback if dependency exists)
+    - name: Stop NFS server service if running
       systemd:
         name: "{{ nfs_service }}"
-        masked: yes
-      when: "'no-dependency' not in nfs_dependency_check.stdout"
+        state: stopped
+        enabled: false
+        masked: true
+      when: nfs_installed.rc == 0
 
-    - name: Remove nfs-utils if not required
-      dnf:
-        name: "{{ nfs_package }}"
-        state: absent
-      when: "'no-dependency' in nfs_dependency_check.stdout"
+    - name: Remove nfs-utils package (safe command fallback)
+      command: "dnf -y remove {{ nfs_pkg }}"
+      register: nfs_remove_result
+      changed_when: "'Complete!' in nfs_remove_result.stdout"
+      when: nfs_installed.rc == 0
 
-    - name: Confirm service masking
-      shell: |
-        systemctl is-enabled {{ nfs_service }} || echo "masked or disabled"
-      register: nfs_mask_check
-
-    - name: Print NFS final status
+    - name: Log NFS service and package removal status
       debug:
-        msg:
-          - "Service enabled check: {{ nfs_enabled_check.stdout }}"
-          - "Service active check: {{ nfs_active_check.stdout }}"
-          - "Package dependency check: {{ nfs_dependency_check.stdout }}"
-          - "Mask check result: {{ nfs_mask_check.stdout }}"
+        msg: >
+          {{
+            'nfs-utils package removed and service stopped/masked successfully'
+            if nfs_remove_result.changed else
+            'nfs-utils not installed or already removed'
+          }}
