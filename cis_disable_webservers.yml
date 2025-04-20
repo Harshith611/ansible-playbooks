@@ -1,3 +1,4 @@
+---
 - name: CIS 2.2.18 - Ensure web server services are not in use
   hosts: all
   become: true
@@ -17,35 +18,33 @@
 
     - name: Backup systemd service files if present
       shell: |
-        for svc in {{ services_to_check | join(' ') }}; do
-          if [ -f /usr/lib/systemd/system/${svc}.service ]; then
-            cp /usr/lib/systemd/system/${svc}.service {{ backup_dir }}/
+        for svc in httpd nginx; do
+          if systemctl list-unit-files | grep -q "${svc}.service"; then
+            cp /usr/lib/systemd/system/${svc}.service {{ backup_dir }}/ || true
           fi
         done
       args:
         executable: /bin/bash
-
-    - name: Check installed services
-      shell: systemctl list-unit-files | awk '{print $1}' | grep -E '^(httpd|nginx|httpd.socket)\.service$'
-      register: installed_services
-      changed_when: false
-      failed_when: false
 
     - name: Stop web server services if they exist
       service:
         name: "{{ item }}"
         state: stopped
         enabled: no
-      loop: "{{ installed_services.stdout_lines | map('regex_replace', '\\.service$', '') | list }}"
-      when: installed_services.stdout != ""
+      loop:
+        - httpd
+        - nginx
+        - httpd.socket
       ignore_errors: true
 
     - name: Mask web server services
       systemd:
         name: "{{ item }}"
         masked: yes
-      loop: "{{ installed_services.stdout_lines | map('regex_replace', '\\.service$', '') | list }}"
-      when: installed_services.stdout != ""
+      loop:
+        - httpd
+        - nginx
+        - httpd.socket
       ignore_errors: true
 
     - name: Check if httpd is needed for dependency
@@ -54,7 +53,7 @@
       changed_when: false
 
     - name: Remove httpd if not required
-      package:
+      yum:
         name: httpd
         state: absent
       when: "'no-dependency' in httpd_dependency_check.stdout"
@@ -65,7 +64,7 @@
       changed_when: false
 
     - name: Remove nginx if installed
-      package:
+      yum:
         name: nginx
         state: absent
       when: "'not-installed' not in nginx_check.stdout"
