@@ -1,0 +1,62 @@
+---
+- name: CIS 2.2.2 - Ensure avahi daemon services are not in use
+  hosts: all
+  become: true
+  vars:
+    backup_dir: "/var/backups/cis_avahi_{{ ansible_date_time.iso8601_basic_short }}"
+
+  tasks:
+
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Backup avahi-daemon.service if it exists
+      shell: |
+        cp /usr/lib/systemd/system/avahi-daemon.service {{ backup_dir }}/ || true
+        cp /usr/lib/systemd/system/avahi-daemon.socket {{ backup_dir }}/ || true
+      args:
+        executable: /bin/bash
+
+    - name: Stop avahi daemon services if running
+      service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: no
+      loop:
+        - avahi-daemon
+        - avahi-daemon.socket
+      ignore_errors: true
+
+    - name: Check if avahi is required by any package
+      shell: "rpm -q --whatrequires avahi || echo 'no-dependency'"
+      register: avahi_dependency_check
+      changed_when: false
+
+    - name: Remove avahi package if not required
+      dnf:
+        name: avahi
+        state: absent
+      when: "'no-dependency' in avahi_dependency_check.stdout"
+
+    - name: Mask avahi services if package is still installed
+      systemd:
+        name: "{{ item }}"
+        masked: yes
+      loop:
+        - avahi-daemon
+        - avahi-daemon.socket
+      when: "'no-dependency' not in avahi_dependency_check.stdout"
+
+    - name: Confirm avahi services are inactive and masked
+      shell: |
+        for svc in avahi-daemon avahi-daemon.socket; do
+          echo "$svc: $(systemctl is-active $svc || echo inactive), $(systemctl is-enabled $svc || echo disabled)"
+        done
+      register: avahi_final_check
+
+    - name: Print final avahi status summary
+      debug:
+        msg: "{{ avahi_final_check.stdout_lines }}"
