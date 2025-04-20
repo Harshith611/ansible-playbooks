@@ -1,0 +1,29 @@
+---
+- name: CIS 2.3.1 - Ensure FTP client is not installed
+  hosts: all
+  become: true
+  vars:
+    ftp_pkg: ftp
+
+  tasks:
+
+    - name: Check if FTP client is installed
+      shell: rpm -q {{ ftp_pkg }}
+      register: ftp_installed
+      changed_when: false
+      failed_when: false
+
+    - name: Remove FTP client if installed (command fallback)
+      command: "dnf -y remove {{ ftp_pkg }}"
+      register: ftp_remove_result
+      changed_when: "'Complete!' in ftp_remove_result.stdout"
+      when: ftp_installed.rc == 0
+
+    - name: Log FTP removal status
+      debug:
+        msg: >
+          {{
+            'FTP client removed successfully'
+            if ftp_remove_result.changed else
+            'FTP client not present or already removed'
+          }}
