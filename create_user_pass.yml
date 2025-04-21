@@ -1,9 +1,9 @@
----
 - name: Create 5 users with secure random passwords and store them locally
   hosts: all
   become: true
   vars:
-    local_password_file: /tmp/generated-user-passwords.txt  # Stored on controller
+    local_password_dir: /tmp/generated_user_passwords  # Directory on the host machine
+    local_password_file: "{{ local_password_dir }}/generated-user-passwords.txt"  # Path to file on the host machine
 
   pre_tasks:
     - name: Define user list and generate passwords (controller-side)
@@ -22,6 +22,12 @@
               }) | list
           }}
 
+    - name: Create directory to store password file on host machine
+      file:
+        path: "{{ local_password_dir }}"
+        state: directory
+        mode: '0700'
+
     - name: Save username + raw password to file on Ansible host
       local_action:
         module: copy
@@ -33,7 +39,6 @@
         mode: '0600'
 
   tasks:
-
     - name: Create each user with hashed password
       user:
         name: "{{ item.name }}"
