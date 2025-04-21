@@ -1,64 +1,65 @@
 ---
-- name: Create Oracle system users and add them to 'hardware' group
+- name: Create hardware group users only if they don't exist
   hosts: all
   become: true
   vars:
-    user_group: hardware
-    user_password_dir: /tmp/oracle_user_passwords
-    user_password_file: "{{ user_password_dir }}/users.txt"
-
-    oracle_users:
-      - name: lalitkumar.j.wani
-        username: shce1031
-      - name: madhvan.k.s.
-        username: shce1051
-      - name: basavraj
-        username: shce1574
-      - name: suyog.gangan
-        username: shce4025
-      - name: ajay.vyas
-        username: shce1052
-
-  pre_tasks:
-    - name: Ensure local password directory exists on controller
-      delegate_to: localhost
-      file:
-        path: "{{ user_password_dir }}"
-        state: directory
-        mode: '0700'
-
-    - name: Generate random passwords and hash them
-      set_fact:
-        oracle_users: >-
-          {{ oracle_users |
-             map('combine', {
-               'password_raw': lookup('password', '/dev/null length=16 chars=ascii_letters,digits'),
-               'password_hashed': lookup('password', '/dev/null length=16 chars=ascii_letters,digits') | password_hash('sha512')
-             }) | list }}
-
-    - name: Save usernames and raw passwords to controller
-      delegate_to: localhost
-      copy:
-        dest: "{{ user_password_file }}"
-        mode: '0600'
-        content: |
-          {% for user in oracle_users %}
-          {{ user.username }} ({{ user.name }}): {{ user.password_raw }}
-          {% endfor %}
+    default_password: "Welcome@shcil123"
+    password_hashed: "{{ default_password | password_hash('sha512') }}"
+    user_list:
+      - { name: "shce1031", comment: "Lalitkumar j wani" }
+      - { name: "shce1051", comment: "Madhvan K.S." }
+      - { name: "shce1574", comment: "Basavraj" }
+      - { name: "shce4025", comment: "Suyog Gangan" }
+      - { name: "shce1052", comment: "Ajay Vyas" }
+    output_file: /tmp/hardware_users_uid.txt
 
   tasks:
-    - name: Ensure the '{{ user_group }}' group exists
+
+    - name: Ensure 'hardware' group exists
       group:
-        name: "{{ user_group }}"
+        name: hardware
         state: present
 
-    - name: Create each user and add to '{{ user_group }}'
+    - name: Check if user already exists
+      ansible.builtin.command: id -u {{ item.name }}
+      loop: "{{ user_list }}"
+      register: check_user
+      ignore_errors: true
+      changed_when: false
+
+    - name: Create users if they do not exist
       user:
-        name: "{{ item.username }}"
-        comment: "{{ item.name }}"
-        group: "{{ user_group }}"
-        password: "{{ item.password_hashed }}"
+        name: "{{ item.item.name }}"
+        comment: "{{ item.item.comment }}"
+        password: "{{ password_hashed }}"
         shell: /bin/bash
-        state: present
         create_home: yes
-      loop: "{{ oracle_users }}"
+        group: hardware
+        state: present
+      loop: "{{ check_user.results }}"
+      when: item.rc != 0  # Only create if user does not exist
+
+    - name: Collect user UIDs
+      command: id -u {{ item.name }}
+      loop: "{{ user_list }}"
+      register: user_uid_output
+      changed_when: false
+
+    - name: Build username to UID list
+      set_fact:
+        user_uid_map: >-
+          {{
+            user_uid_map | default([]) +
+            [ { 'name': item.item.name, 'uid': item.stdout | default('N/A') } ]
+          }}
+      loop: "{{ user_uid_output.results }}"
+
+    - name: Save user and UID to a file on the host machine
+      copy:
+        dest: "{{ output_file }}"
+        content: |
+          Hardware Group User UID Mapping:
+          {% for entry in user_uid_map %}
+          {{ entry.name }}: {{ entry.uid }}
+          {% endfor %}
+        mode: '0644'
