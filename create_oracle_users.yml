@@ -1,0 +1,64 @@
+---
+- name: Create Oracle system users and add them to 'hardware' group
+  hosts: all
+  become: true
+  vars:
+    user_group: hardware
+    user_password_dir: /tmp/oracle_user_passwords
+    user_password_file: "{{ user_password_dir }}/users.txt"
+
+    oracle_users:
+      - name: lalitkumar.j.wani
+        username: shce1031
+      - name: madhvan.k.s.
+        username: shce1051
+      - name: basavraj
+        username: shce1574
+      - name: suyog.gangan
+        username: shce4025
+      - name: ajay.vyas
+        username: shce1052
+
+  pre_tasks:
+    - name: Ensure local password directory exists on controller
+      delegate_to: localhost
+      file:
+        path: "{{ user_password_dir }}"
+        state: directory
+        mode: '0700'
+
+    - name: Generate random passwords and hash them
+      set_fact:
+        oracle_users: >-
+          {{ oracle_users |
+             map('combine', {
+               'password_raw': lookup('password', '/dev/null length=16 chars=ascii_letters,digits'),
+               'password_hashed': lookup('password', '/dev/null length=16 chars=ascii_letters,digits') | password_hash('sha512')
+             }) | list }}
+
+    - name: Save usernames and raw passwords to controller
+      delegate_to: localhost
+      copy:
+        dest: "{{ user_password_file }}"
+        mode: '0600'
+        content: |
+          {% for user in oracle_users %}
+          {{ user.username }} ({{ user.name }}): {{ user.password_raw }}
+          {% endfor %}
+
+  tasks:
+    - name: Ensure the '{{ user_group }}' group exists
+      group:
+        name: "{{ user_group }}"
+        state: present
+
+    - name: Create each user and add to '{{ user_group }}'
+      user:
+        name: "{{ item.username }}"
+        comment: "{{ item.name }}"
+        group: "{{ user_group }}"
+        password: "{{ item.password_hashed }}"
+        shell: /bin/bash
+        state: present
+        create_home: yes
+      loop: "{{ oracle_users }}"
