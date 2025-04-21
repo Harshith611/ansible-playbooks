@@ -1,0 +1,53 @@
+---
+- name: Create 5 users with secure random passwords and store them locally
+  hosts: all
+  become: true
+  vars:
+    local_password_file: /tmp/generated-user-passwords.txt  # Stored on controller
+
+  pre_tasks:
+    - name: Define user list and generate passwords (controller-side)
+      set_fact:
+        users: >-
+          {{
+            [
+              {'name': 'rootuser', 'sudo': True},
+              {'name': 'devuser1', 'sudo': False},
+              {'name': 'devuser2', 'sudo': False},
+              {'name': 'qauser', 'sudo': False},
+              {'name': 'audit', 'sudo': False}
+            ] | map('combine', {
+                  'password_raw': lookup('password', '/dev/null length=20 chars=ascii_letters,digits'),
+                  'password_hashed': lookup('password', '/dev/null length=20 chars=ascii_letters,digits') | password_hash('sha512')
+              }) | list
+          }}
+
+    - name: Save username + raw password to file on Ansible host
+      local_action:
+        module: copy
+        content: |
+          {% for user in users %}
+          {{ user.name }}: {{ user.password_raw }}
+          {% endfor %}
+        dest: "{{ local_password_file }}"
+        mode: '0600'
+
+  tasks:
+
+    - name: Create each user with hashed password
+      user:
+        name: "{{ item.name }}"
+        password: "{{ item.password_hashed }}"
+        shell: /bin/bash
+        create_home: yes
+        state: present
+        update_password: on_create
+      loop: "{{ users }}"
+
+    - name: Add sudo privileges for rootuser
+      copy:
+        dest: "/etc/sudoers.d/{{ item.name }}"
+        content: "{{ item.name }} ALL=(ALL) NOPASSWD:ALL"
+        mode: '0440'
+      when: item.sudo
+      loop: "{{ users }}"
