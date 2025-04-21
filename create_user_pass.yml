@@ -22,13 +22,15 @@
               }) | list
           }}
 
-    - name: Ensure the directory exists to store password file on the host machine
+    - name: Ensure the directory exists to store password file on the host machine (on the local machine)
+      delegate_to: localhost
       file:
         path: "{{ local_password_dir }}"
         state: directory
         mode: '0700'
 
     - name: Save username + raw password to file on Ansible host
+      delegate_to: localhost
       local_action:
         module: copy
         content: |
