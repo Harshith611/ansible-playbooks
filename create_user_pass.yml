@@ -22,7 +22,7 @@
               }) | list
           }}
 
-    - name: Create directory to store password file on host machine
+    - name: Ensure the directory exists to store password file on the host machine
       file:
         path: "{{ local_password_dir }}"
         state: directory
