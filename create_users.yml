@@ -1,0 +1,22 @@
+---
+- name: Create 5 users on the Translab VM
+  hosts: all
+  become: yes
+
+  vars:
+    users:
+      - { name: user1, password: PassUser1! }
+      - { name: user2, password: PassUser2! }
+      - { name: user3, password: PassUser3! }
+      - { name: user4, password: PassUser4! }
+      - { name: user5, password: PassUser5! }
+
+  tasks:
+    - name: Create users with home directories and set passwords
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        password: "{{ item.password | password_hash('sha512') }}"
+        shell: /bin/bash
+        state: present
+        create_home: yes
+      loop: "{{ users }}"
