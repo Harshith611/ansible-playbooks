@@ -1,0 +1,63 @@
+---
+- name: Ensure audit tools are owned by root (CIS 5.2.4.9)
+  hosts: all
+  become: yes
+  vars:
+    audit_tools:
+      - /sbin/auditctl
+      - /sbin/aureport
+      - /sbin/ausearch
+      - /sbin/autrace
+      - /sbin/auditd
+      - /sbin/augenrules
+
+  tasks:
+
+    - name: Check if audit tool exists
+      stat:
+        path: "{{ item }}"
+      register: tool_stats
+      with_items: "{{ audit_tools }}"
+      tags: check
+
+    - name: Collect existing tools
+      set_fact:
+        existing_tools: "{{ tool_stats.results | selectattr('stat.exists', 'equalto', true) | map(attribute='stat.path') | list }}"
+      tags: check
+
+    - name: Change ownership of audit tools to root
+      file:
+        path: "{{ item }}"
+        owner: root
+      with_items: "{{ existing_tools }}"
+      tags: fix
+
+    - name: Verify ownership of audit tools
+      shell: |
+        for tool in {{ existing_tools | join(' ') }}; do
+          owner=$(stat -c '%U' "$tool")
+          echo "$tool owned by $owner"
+        done
+      register: owner_check
+      changed_when: false
+      tags: verify
+
+    - name: Show verification results
+      debug:
+        var: owner_check.stdout_lines
+      tags: verify
+
+    - name: Fail if any tool is not owned by root
+      shell: |
+        for tool in {{ existing_tools | join(' ') }}; do
+          [ "$(stat -c '%U' $tool)" != "root" ] && echo "$tool not owned by root"
+        done || echo "pass"
+      register: ownership_check
+      changed_when: false
+      tags: validate
+
+    - name: Fail task if non-root ownership found
+      fail:
+        msg: "Some audit tools are not owned by root."
+      when: ownership_check.stdout is search('not owned')
+      tags: validate
