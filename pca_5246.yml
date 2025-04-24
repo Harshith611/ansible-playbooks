@@ -1,0 +1,45 @@
+---
+- name: Ensure audit configuration files are owned by root (CIS 5.2.4.6)
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Find audit configuration files (.conf, .rules)
+      find:
+        paths: /etc/audit/
+        patterns: "*.conf,*.rules"
+        recurse: yes
+        file_type: file
+      register: audit_config_files
+
+    - name: Backup audit configuration files before changing ownership
+      copy:
+        src: "{{ item.path }}"
+        dest: "{{ item.path }}.bak_{{ ansible_date_time.iso8601_basic_short }}"
+        remote_src: yes
+        mode: preserve
+      with_items: "{{ audit_config_files.files }}"
+      when: audit_config_files.matched > 0
+
+    - name: Ensure ownership of audit configuration files is root
+      file:
+        path: "{{ item.path }}"
+        owner: root
+      with_items: "{{ audit_config_files.files }}"
+      when: audit_config_files.matched > 0
+
+    - name: Verify ownership of audit config files is root
+      shell: |
+        find /etc/audit/ -type f \( -name "*.conf" -o -name "*.rules" \) ! -user root || echo "pass"
+      register: ownership_check
+      changed_when: false
+
+    - name: Display verification results
+      debug:
+        msg: "{{ ownership_check.stdout_lines }}"
+
+    - name: Fail if any audit config files are not owned by root
+      fail:
+        msg: "Some audit config files are not owned by root!"
+      when: ownership_check.stdout is search('^\/')
+
