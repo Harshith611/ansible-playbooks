@@ -1,0 +1,76 @@
+---
+- name: Secure World Writable Files and Directories with Backup and Checkpoints
+  hosts: all
+  become: yes
+  vars:
+    backup_dir: "/var/backups/world_writable_backup_{{ ansible_date_time.date }}"
+    dry_run: false  # set to true if you want to simulate changes without applying
+
+  tasks:
+
+    - name: CHECKPOINT 1 - Ensure backup directory exists
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: CHECKPOINT 2 - Find world writable FILES (excluding sensitive paths)
+      shell: >
+        find / -xdev \( -path /proc -o -path /sys -o -path /run -o -path /snap -o -path /dev
+        -o -path /var/lib/containerd -o -path /var/lib/kubelet -o -path /tmp \) -prune
+        -o -type f -perm -0002 -print
+      register: ww_files
+      changed_when: false
+      failed_when: ww_files.rc != 0
+
+    - name: BACKUP and FIX world writable FILES
+      block:
+        - name: CHECKPOINT 3 - Back up world writable files
+          ansible.builtin.command: >
+            cp --parents "{{ item }}" "{{ backup_dir }}"
+          loop: "{{ ww_files.stdout_lines }}"
+          when: not dry_run
+          ignore_errors: yes
+          register: backup_result
+
+        - name: REMOVE other write permission from world writable files
+          ansible.builtin.file:
+            path: "{{ item }}"
+            mode: "u=rwX,g=rX,o=rX"
+          loop: "{{ ww_files.stdout_lines }}"
+          when: not dry_run
+
+      rescue:
+        - name: ERROR - Could not fix some world writable files
+          debug:
+            msg: "Failed to process world writable files. Check backup and logs."
+
+    - name: CHECKPOINT 4 - Find world writable DIRECTORIES
+      shell: >
+        find / -xdev \( -path /proc -o -path /sys -o -path /run -o -path /snap -o -path /dev
+        -o -path /var/lib/containerd -o -path /var/lib/kubelet -o -path /tmp \) -prune
+        -o -type d -perm -0002 -print
+      register: ww_dirs
+      changed_when: false
+      failed_when: ww_dirs.rc != 0
+
+    - name: FIX world writable DIRECTORIES (add sticky bit)
+      block:
+        - name: CHECKPOINT 5 - Add sticky bit to world writable directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            mode: "u=rwX,g=rX,o=rX,+t"
+          loop: "{{ ww_dirs.stdout_lines }}"
+          when: not dry_run
+
+      rescue:
+        - name: ERROR - Could not fix some world writable directories
+          debug:
+            msg: "Failed to process some directories. Manual intervention may be required."
+
+    - name: FINAL CHECKPOINT - Log summary
+      debug:
+        msg: |
+          ✅ Completed world writable security remediation.
+          🔒 Backups stored in: {{ backup_dir }}
+          🧪 Dry run mode: {{ dry_run }}
