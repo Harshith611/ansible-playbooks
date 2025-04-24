@@ -1,0 +1,59 @@
+---
+- name: Ensure audit log files are owned by authorized groups (CIS 5.2.4.4)
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Ensure adm group exists
+      group:
+        name: adm
+        state: present
+
+    - name: Find audit log directory from auditd.conf
+      shell: |
+        awk -F '=' '/^\s*log_file\s*=/ {gsub(/ /, "", $2); print $2}' /etc/audit/auditd.conf | xargs dirname
+      register: audit_log_dir
+      changed_when: false
+
+    - name: Fail if audit log directory not found
+      fail:
+        msg: "Audit log directory could not be determined from auditd.conf"
+      when: audit_log_dir.stdout == ""
+
+    - name: Backup auditd.conf
+      copy:
+        src: /etc/audit/auditd.conf
+        dest: /etc/audit/auditd.conf.bak_{{ ansible_date_time.iso8601_basic_short }}
+        remote_src: yes
+      when: audit_log_dir.stdout != ""
+
+    - name: Set group ownership of audit log files to adm (skip root-owned files)
+      shell: |
+        find {{ audit_log_dir.stdout }} -type f ! -group adm ! -group root -exec chgrp adm {} +
+      register: log_group_fix
+      changed_when: log_group_fix.stdout != ""
+
+    - name: Ensure log_group = adm in auditd.conf
+      lineinfile:
+        path: /etc/audit/auditd.conf
+        regexp: '^log_group\s*='
+        line: 'log_group = adm'
+        backup: yes
+        state: present
+
+    - name: Restart auditd service
+      service:
+        name: auditd
+        state: restarted
+
+    - name: Verify log files are owned by adm or root
+      shell: |
+        find {{ audit_log_dir.stdout }} -type f ! -group adm ! -group root
+      register: verify_log_group
+      changed_when: false
+      failed_when: verify_log_group.stdout != ""
+
+    - name: Show final status
+      debug:
+        msg: "Audit log file group ownership has been successfully remediated and verified."
+
