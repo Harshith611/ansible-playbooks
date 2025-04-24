@@ -1,0 +1,45 @@
+---
+- name: Ensure audit configuration files belong to group root (CIS 5.2.4.7)
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Find audit configuration files (.conf, .rules)
+      find:
+        paths: /etc/audit/
+        patterns: "*.conf,*.rules"
+        recurse: yes
+        file_type: file
+      register: audit_config_files
+
+    - name: Backup audit configuration files before changing group ownership
+      copy:
+        src: "{{ item.path }}"
+        dest: "{{ item.path }}.bak_{{ ansible_date_time.iso8601_basic_short }}"
+        remote_src: yes
+        mode: preserve
+      with_items: "{{ audit_config_files.files }}"
+      when: audit_config_files.matched > 0
+
+    - name: Ensure group ownership of audit configuration files is root
+      file:
+        path: "{{ item.path }}"
+        group: root
+      with_items: "{{ audit_config_files.files }}"
+      when: audit_config_files.matched > 0
+
+    - name: Verify group ownership is root
+      shell: |
+        find /etc/audit/ -type f \( -name "*.conf" -o -name "*.rules" \) ! -group root || echo "pass"
+      register: group_check
+      changed_when: false
+
+    - name: Show verification result
+      debug:
+        msg: "{{ group_check.stdout_lines }}"
+
+    - name: Fail if any files are not group-owned by root
+      fail:
+        msg: "Some audit config files are not group-owned by root."
+      when: group_check.stdout is search('^\/')
+
