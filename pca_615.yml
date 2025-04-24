@@ -1,0 +1,32 @@
+---
+- name: CIS 6.1.5 - Ensure permissions on /etc/group- are configured
+  hosts: all
+  become: true
+  tasks:
+
+    - name: CHECKPOINT 1 - Check if /etc/group- exists
+      stat:
+        path: /etc/group-
+      register: group_backup
+
+    - name: CHECKPOINT 2 - Show group backup file status
+      debug:
+        msg: "File /etc/group- exists: {{ group_backup.stat.exists }}"
+
+    - name: CHECKPOINT 3 - Set correct ownership (root:root) on /etc/group-
+      file:
+        path: /etc/group-
+        owner: root
+        group: root
+      when: group_backup.stat.exists
+
+    - name: CHECKPOINT 4 - Set secure permissions (644) on /etc/group-
+      file:
+        path: /etc/group-
+        mode: '0644'
+      when: group_backup.stat.exists
+
+    - name: CHECKPOINT 5 - Skip remediation if file does not exist
+      debug:
+        msg: "File /etc/group- not found. No action needed."
+      when: not group_backup.stat.exists
