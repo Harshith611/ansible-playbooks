@@ -1,0 +1,32 @@
+---
+- name: CIS 6.1.2 - Ensure permissions on /etc/passwd- are configured
+  hosts: all
+  become: true
+  tasks:
+
+    - name: CHECKPOINT 1 - Check if /etc/passwd- exists
+      stat:
+        path: /etc/passwd-
+      register: passwd_backup
+
+    - name: CHECKPOINT 2 - Display file status
+      debug:
+        msg: "File /etc/passwd- exists: {{ passwd_backup.stat.exists }}"
+
+    - name: CHECKPOINT 3 - Set owner and group to root
+      file:
+        path: /etc/passwd-
+        owner: root
+        group: root
+      when: passwd_backup.stat.exists
+
+    - name: CHECKPOINT 4 - Set permissions to 0644 (remove x from user, remove w/x from group/others)
+      file:
+        path: /etc/passwd-
+        mode: '0644'
+      when: passwd_backup.stat.exists
+
+    - name: CHECKPOINT 5 - Skip remediation if file does not exist
+      debug:
+        msg: "File /etc/passwd- not found. Skipping remediation step."
+      when: not passwd_backup.stat.exists
