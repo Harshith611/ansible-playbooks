@@ -1,0 +1,45 @@
+---
+- name: Ensure audit configuration files are 640 or more restrictive (CIS 5.2.4.5)
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Find audit configuration files (.conf, .rules)
+      find:
+        paths: /etc/audit/
+        patterns: "*.conf,*.rules"
+        recurse: yes
+        file_type: file
+      register: audit_config_files
+
+    - name: Back up audit configuration files before modifying permissions
+      copy:
+        src: "{{ item.path }}"
+        dest: "{{ item.path }}.bak_{{ ansible_date_time.iso8601_basic_short }}"
+        remote_src: yes
+        mode: preserve
+      with_items: "{{ audit_config_files.files }}"
+      when: audit_config_files.matched > 0
+
+    - name: Fix permissions on audit config files (max 0640)
+      file:
+        path: "{{ item.path }}"
+        mode: "0640"
+      with_items: "{{ audit_config_files.files }}"
+      when: audit_config_files.matched > 0
+
+    - name: Verify permissions of audit config files are 640 or more restrictive
+      shell: |
+        find /etc/audit/ -type f \( -name "*.conf" -o -name "*.rules" \) -exec stat -Lc "%n %a" {} + | \
+        grep -Pv '^\s*\S+\s+([0,2,4,6][0,4]0)\s*$' || echo "pass"
+      register: permission_check
+
+    - name: Show verification result
+      debug:
+        msg: "{{ permission_check.stdout_lines }}"
+
+    - name: Fail if audit config file permissions are too loose
+      fail:
+        msg: "One or more audit config files have permissions more permissive than 640."
+      when: permission_check.stdout is search('fail|[7-9][0-9]{2}|[0-6][5-9][0-9]|[0-6][0-4][1-9]')
+
