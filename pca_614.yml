@@ -1,0 +1,32 @@
+---
+- name: CIS 6.1.4 - Ensure permissions on /etc/group are configured
+  hosts: all
+  become: true
+  tasks:
+
+    - name: CHECKPOINT 1 - Check if /etc/group exists
+      stat:
+        path: /etc/group
+      register: group_main
+
+    - name: CHECKPOINT 2 - Show group file status
+      debug:
+        msg: "File /etc/group exists: {{ group_main.stat.exists }}"
+
+    - name: CHECKPOINT 3 - Set ownership to root:root
+      file:
+        path: /etc/group
+        owner: root
+        group: root
+      when: group_main.stat.exists
+
+    - name: CHECKPOINT 4 - Set secure permissions (0644) on /etc/group
+      file:
+        path: /etc/group
+        mode: '0644'
+      when: group_main.stat.exists
+
+    - name: CHECKPOINT 5 - Log if file is missing
+      debug:
+        msg: "File /etc/group not found. No remediation needed."
+      when: not group_main.stat.exists
