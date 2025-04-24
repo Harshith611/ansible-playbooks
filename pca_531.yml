@@ -1,0 +1,78 @@
+---
+- name: Ensure AIDE is installed and initialized properly
+  hosts: all
+  become: true
+  vars:
+    aide_db_path: /var/lib/aide/aide.db.gz
+    aide_new_db_path: /var/lib/aide/aide.db.new.gz
+    aide_backup_path: /var/lib/aide/aide.db.gz.bak_{{ ansible_date_time.iso8601 }}
+
+  tasks:
+
+    - name: [Checkpoint 1] Check if AIDE is installed
+      package_facts:
+
+    - name: [Checkpoint 2] Install AIDE if not installed
+      package:
+        name: aide
+        state: present
+      register: aide_pkg
+
+    - name: [Checkpoint 3] Log installation result
+      debug:
+        msg: >-
+          {% if aide_pkg.changed %}
+          AIDE was installed successfully.
+          {% else %}
+          AIDE is already installed.
+          {% endif %}
+
+    - name: [Checkpoint 4] Ensure /var/lib/aide exists
+      file:
+        path: /var/lib/aide
+        state: directory
+        mode: '0750'
+
+    - name: [Checkpoint 5] Check if AIDE DB exists
+      stat:
+        path: "{{ aide_db_path }}"
+      register: aide_db
+
+    - name: [Checkpoint 6] Backup existing AIDE DB if it exists
+      copy:
+        src: "{{ aide_db_path }}"
+        dest: "{{ aide_backup_path }}"
+        remote_src: true
+      when: aide_db.stat.exists
+
+    - name: [Checkpoint 7] Initialize AIDE database
+      command: aide --init
+      args:
+        creates: "{{ aide_new_db_path }}"
+
+    - name: [Checkpoint 8] Move new DB into place
+      command: mv "{{ aide_new_db_path }}" "{{ aide_db_path }}"
+      when: 
+        - not aide_db.stat.exists or
+          (aide_db.stat.exists and aide_db.stat.checksum != lookup('file', aide_new_db_path, errors='ignore') | checksum('sha1'))
+      ignore_errors: true
+      register: move_result
+
+    - name: [Checkpoint 9] Fail if DB move fails
+      fail:
+        msg: "Failed to move AIDE DB. Check permissions or disk space."
+      when: move_result.failed
+
+    - name: [Checkpoint 10] Final check - verify AIDE DB
+      stat:
+        path: "{{ aide_db_path }}"
+      register: final_check
+
+    - name: [Checkpoint 11] Report final status
+      debug:
+        msg: >-
+          {% if final_check.stat.exists %}
+          AIDE database is present and initialized.
+          {% else %}
+          AIDE database is missing. Initialization may have failed.
+          {% endif %}
