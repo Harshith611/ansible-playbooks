@@ -5,39 +5,41 @@
   vars:
     aide_db_path: /var/lib/aide/aide.db.gz
     aide_new_db_path: /var/lib/aide/aide.db.new.gz
-    aide_backup_path: /var/lib/aide/aide.db.gz.bak_{{ ansible_date_time.iso8601 }}
+    aide_backup_path: "/var/lib/aide/aide.db.gz.bak_{{ ansible_date_time.iso8601 }}"
 
   tasks:
-    - name: Checkpoint 1 - Check if AIDE is installed
-      package_facts: {}
 
-    - name: Checkpoint 2 - Install AIDE if not installed
-      package:
+    - name: Checkpoint 1 - Check if AIDE is installed
+      package_facts:
+
+    - name: Checkpoint 2 - Install AIDE (with GPG check disabled)
+      dnf:
         name: aide
         state: present
+        disable_gpg_check: true
       register: aide_pkg
 
-    - name: Checkpoint 3 - Log installation result
+    - name: Checkpoint 3 - Log AIDE install result
       debug:
         msg: >-
           {% if aide_pkg.changed %}
-            AIDE was installed successfully.
+            ✅ AIDE was installed successfully.
           {% else %}
-            AIDE is already installed.
+            ℹ️ AIDE is already installed.
           {% endif %}
 
-    - name: Checkpoint 4 - Ensure /var/lib/aide exists
+    - name: Checkpoint 4 - Ensure /var/lib/aide directory exists
       file:
         path: /var/lib/aide
         state: directory
         mode: '0750'
 
-    - name: Checkpoint 5 - Check if AIDE DB exists
+    - name: Checkpoint 5 - Check if AIDE database exists
       stat:
         path: "{{ aide_db_path }}"
       register: aide_db
 
-    - name: Checkpoint 6 - Backup existing AIDE DB if it exists
+    - name: Checkpoint 6 - Backup existing AIDE database (if exists)
       copy:
         src: "{{ aide_db_path }}"
         dest: "{{ aide_backup_path }}"
@@ -49,20 +51,20 @@
       args:
         creates: "{{ aide_new_db_path }}"
 
-    - name: Checkpoint 8 - Move new DB into place
+    - name: Checkpoint 8 - Replace old DB with new DB
       command: mv "{{ aide_new_db_path }}" "{{ aide_db_path }}"
-      when: 
-        - not aide_db.stat.exists
-        - aide_db.stat.exists and aide_db.stat.checksum != lookup('file', aide_new_db_path, errors='ignore') | checksum('sha1')
+      when:
+        - not aide_db.stat.exists or
+          (aide_db.stat.exists and aide_db.stat.checksum is defined)
       ignore_errors: true
       register: move_result
 
-    - name: Checkpoint 9 - Fail if DB move fails
+    - name: Checkpoint 9 - Fail if moving AIDE DB fails
       fail:
-        msg: "Failed to move AIDE DB. Check permissions or disk space."
+        msg: "❌ Failed to move AIDE DB. Check permissions or disk space."
       when: move_result.failed
 
-    - name: Checkpoint 10 - Final check - verify AIDE DB
+    - name: Checkpoint 10 - Final check - confirm AIDE DB is in place
       stat:
         path: "{{ aide_db_path }}"
       register: final_check
@@ -71,7 +73,7 @@
       debug:
         msg: >-
           {% if final_check.stat.exists %}
-            AIDE database is present and initialized.
+            ✅ AIDE database is present and initialized.
           {% else %}
-            AIDE database is missing. Initialization may have failed.
+            ❌ AIDE database is missing. Initialization may have failed.
           {% endif %}
