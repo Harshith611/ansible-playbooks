@@ -1,0 +1,71 @@
+---
+- name: Ensure audit tools are 755 or more restrictive (CIS 5.2.4.8)
+  hosts: all
+  become: yes
+  vars:
+    audit_tools:
+      - /sbin/auditctl
+      - /sbin/aureport
+      - /sbin/ausearch
+      - /sbin/autrace
+      - /sbin/auditd
+      - /sbin/augenrules
+
+  tasks:
+
+    - name: Check if audit tool exists
+      stat:
+        path: "{{ item }}"
+      register: audit_tool_stats
+      with_items: "{{ audit_tools }}"
+      tags: check
+
+    - name: Filter existing tools
+      set_fact:
+        existing_audit_tools: "{{ audit_tool_stats.results | selectattr('stat.exists', 'equalto', true) | map(attribute='stat.path') | list }}"
+      tags: check
+
+    - name: Backup audit tool permissions before changing
+      command: "stat -c '%a %n' {{ item }}"
+      register: audit_tool_backup
+      changed_when: false
+      with_items: "{{ existing_audit_tools }}"
+      tags: backup
+
+    - name: Fix permissions of audit tools (remove group/other write)
+      file:
+        path: "{{ item }}"
+        mode: "u=rwx,g=rx,o=rx"
+      with_items: "{{ existing_audit_tools }}"
+      tags: fix
+
+    - name: Verify permissions of audit tools
+      shell: |
+        for tool in {{ existing_audit_tools | join(' ') }}; do
+          perms=$(stat -c '%a' "$tool")
+          echo "$tool: $perms"
+        done
+      register: tool_perm_check
+      changed_when: false
+      tags: verify
+
+    - name: Show verification output
+      debug:
+        var: tool_perm_check.stdout_lines
+      tags: verify
+
+    - name: Fail if any tool is more permissive than 755
+      shell: |
+        for tool in {{ existing_audit_tools | join(' ') }}; do
+          perms=$(stat -c '%a' "$tool")
+          [[ $perms -gt 755 ]] && echo "$tool $perms"
+        done || echo "pass"
+      register: perm_enforce_check
+      changed_when: false
+      tags: validate
+
+    - name: Fail if tools are too permissive
+      fail:
+        msg: "One or more audit tools have permissions more permissive than 755."
+      when: perm_enforce_check.stdout is search('^/')
+
