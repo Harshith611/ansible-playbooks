@@ -9,7 +9,7 @@
 
   tasks:
     - name: [Checkpoint 1] Check if AIDE is installed
-      package_facts:
+      package_facts: {}
 
     - name: [Checkpoint 2] Install AIDE if not installed
       package:
@@ -21,9 +21,9 @@
       debug:
         msg: >-
           {% if aide_pkg.changed %}
-          AIDE was installed successfully.
+            AIDE was installed successfully.
           {% else %}
-          AIDE is already installed.
+            AIDE is already installed.
           {% endif %}
 
     - name: [Checkpoint 4] Ensure /var/lib/aide exists
@@ -52,8 +52,8 @@
     - name: [Checkpoint 8] Move new DB into place
       command: mv "{{ aide_new_db_path }}" "{{ aide_db_path }}"
       when: 
-        - not aide_db.stat.exists or
-          (aide_db.stat.exists and aide_db.stat.checksum != lookup('file', aide_new_db_path, errors='ignore') | checksum('sha1'))
+        - not aide_db.stat.exists
+        - aide_db.stat.exists and aide_db.stat.checksum != lookup('file', aide_new_db_path, errors='ignore') | checksum('sha1')
       ignore_errors: true
       register: move_result
 
@@ -71,7 +71,7 @@
       debug:
         msg: >-
           {% if final_check.stat.exists %}
-          AIDE database is present and initialized.
+            AIDE database is present and initialized.
           {% else %}
-          AIDE database is missing. Initialization may have failed.
+            AIDE database is missing. Initialization may have failed.
           {% endif %}
