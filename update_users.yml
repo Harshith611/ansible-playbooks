@@ -1,0 +1,40 @@
+---
+- name: Update UID and GID for Oracle systems
+  hosts: all
+  become: true
+ 
+  vars:
+    hardware_group: hardware
+    new_gid: 54350
+ 
+    hw_users:
+      - { name: shce1031, uid: 54430 }
+      - { name: shce1051, uid: 54431 }
+      - { name: shce1574, uid: 54432 }
+      - { name: shce4025, uid: 54433 }
+      - { name: shce1052, uid: 54434 }
+ 
+  tasks:
+    - name: Ensure hardware group exists with new GID
+      group:
+        name: "{{ hardware_group }}"
+        gid: "{{ new_gid }}"
+        state: present
+ 
+    - name: Update UID and add users to hardware group
+      user:
+        name: "{{ item.name }}"
+        uid: "{{ item.uid }}"
+        groups: "{{ hardware_group }}"
+        append: yes
+        state: present
+      loop: "{{ hw_users }}"
+ 
+    - name: Fix file ownership in /home directories (if required)
+      file:
+        path: "/home/{{ item.name }}"
+        owner: "{{ item.name }}"
+        group: "{{ hardware_group }}"
+        recurse: yes
+      loop: "{{ hw_users }}"
+      ignore_errors: true  # In case some users have no home or non-standard home
