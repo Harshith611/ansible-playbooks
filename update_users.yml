@@ -1,11 +1,11 @@
 ---
-- name: Update UID and GID for Oracle systems
+- name: Update UID and primary group GID for users, add to hardware group
   hosts: all
   become: true
  
   vars:
     hardware_group: hardware
-    new_gid: 54350
+    hardware_gid: 54350
  
     hw_users:
       - { name: shce1031, uid: 54430 }
@@ -15,26 +15,34 @@
       - { name: shce1052, uid: 54434 }
  
   tasks:
-    - name: Ensure hardware group exists with new GID
+    - name: Ensure hardware group exists with specified GID
       group:
         name: "{{ hardware_group }}"
-        gid: "{{ new_gid }}"
+        gid: "{{ hardware_gid }}"
         state: present
  
-    - name: Update UID and add users to hardware group
+    - name: Create primary group for each user with same GID as UID
+      group:
+        name: "{{ item.name }}"
+        gid: "{{ item.uid }}"
+        state: present
+      loop: "{{ hw_users }}"
+ 
+    - name: Update user UID and primary group, and add to hardware group
       user:
         name: "{{ item.name }}"
         uid: "{{ item.uid }}"
-        groups: "{{ hardware_group }}"
-        append: yes
+        group: "{{ item.name }}"           # Primary group
+        groups: "{{ hardware_group }}"     # Secondary group
+        append: true
         state: present
       loop: "{{ hw_users }}"
  
-    - name: Fix file ownership in /home directories (if required)
+    - name: Fix ownership of home directories (if needed)
       file:
         path: "/home/{{ item.name }}"
         owner: "{{ item.name }}"
-        group: "{{ hardware_group }}"
+        group: "{{ item.name }}"
         recurse: yes
       loop: "{{ hw_users }}"
-      ignore_errors: true  # In case some users have no home or non-standard home
+      ignore_errors: true
