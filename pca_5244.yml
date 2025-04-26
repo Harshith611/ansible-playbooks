@@ -6,7 +6,7 @@
     audit_conf: /etc/audit/auditd.conf
     timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
   tasks:
- 
+
     - name: Backup auditd.conf with timestamp
       copy:
         src: "{{ audit_conf }}"
@@ -15,7 +15,7 @@
         owner: root
         group: root
         mode: '0640'
- 
+
     - name: Ensure log_group is set to adm in auditd.conf
       lineinfile:
         path: "{{ audit_conf }}"
@@ -23,41 +23,46 @@
         line: 'log_group = adm'
         create: yes
         backup: no
- 
-    - name: Get audit log directory from auditd.conf
+
+    - name: Get audit log path from auditd.conf
       command: awk -F '=' '/^\s*log_file\s*=/ {print $2}' "{{ audit_conf }}"
       register: audit_log_path
       changed_when: false
- 
+
     - name: Set log_dir variable from parsed path
       set_fact:
         log_dir: "{{ audit_log_path.stdout | dirname | trim }}"
- 
-    - name: Fix audit log file group to adm if not root or adm
+
+    - name: Find all audit log files
       find:
         paths: "{{ log_dir }}"
         file_type: file
         recurse: yes
       register: audit_logs
- 
-    - name: Change group ownership of unauthorized audit log files
-      command: chgrp adm "{{ item.path }}"
-      when: item.grp != "adm" and item.grp != "root"
+
+    - name: Get file ownership details
+      stat:
+        path: "{{ item.path }}"
       loop: "{{ audit_logs.files }}"
+      register: audit_log_stats
+
+    - name: Change group ownership of unauthorized audit log files
+      command: chgrp adm "{{ item.stat.path }}"
+      when: item.stat.grp != "adm" and item.stat.grp != "root"
+      loop: "{{ audit_log_stats.results }}"
       ignore_errors: yes
- 
+
     - name: Ensure /var/log/audit/ group is adm
       file:
         path: /var/log/audit/
         group: adm
         recurse: yes
- 
-    - name: Restart auditd to apply changes
-      systemd:
-        name: auditd
-        state: restarted
-        enabled: yes
- 
-    - name: Reminder to manually reboot system
+
+    - name: Reload auditd if allowed
+      command: systemctl reload auditd
+      ignore_errors: yes
+
+    - name: Warn if auditd reload may not have applied
       debug:
-        msg: "✅ Please reboot the system manually for changes to take full effect."
+        msg: "⚠️ If 'auditd' could not be reloaded, a manual system reboot may be required for full effect."
+
