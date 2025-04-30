@@ -1,0 +1,70 @@
+---
+- name: CIS 2.3.1 - Ensure ftp client is not installed
+  hosts: all
+  become: yes
+  vars:
+    checkpoint_dir: "/var/log/cis_checkpoints"
+    checkpoint_file: "{{ checkpoint_dir }}/2.3.1_remove_ftp.log"
+    backup_dir: "/var/backups/cis_ftp_removal"
+    ftp_pkg: "ftp"
+
+  tasks:
+
+    - name: Ensure checkpoint directory exists
+      file:
+        path: "{{ checkpoint_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Ensure backup directory exists
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Check if FTP is installed
+      shell: rpm -q {{ ftp_pkg }}
+      register: ftp_check
+      ignore_errors: yes
+
+    - name: Backup RPM list before changes
+      shell: rpm -qa > {{ backup_dir }}/rpm_list_before_ftp_removal.txt
+      when: ftp_check.rc == 0
+
+    - name: Log pre-removal status
+      lineinfile:
+        path: "{{ checkpoint_file }}"
+        create: yes
+        line: "FTP client detected: {{ ftp_check.stdout }}"
+      when: ftp_check.rc == 0
+
+    - name: Remove FTP client
+      dnf:
+        name: "{{ ftp_pkg }}"
+        state: absent
+      when: ftp_check.rc == 0
+
+    - name: Verify FTP removal
+      shell: rpm -q {{ ftp_pkg }}
+      register: ftp_post_check
+      ignore_errors: yes
+
+    - name: Log removal result
+      lineinfile:
+        path: "{{ checkpoint_file }}"
+        line: >
+          {% if ftp_post_check.rc != 0 %}
+          FTP removal successful.
+          {% else %}
+          FTP removal failed: {{ ftp_post_check.stdout }}
+          {% endif %}
+      create: yes
+
+    - name: Fail if FTP still installed
+      fail:
+        msg: "FTP package was not successfully removed!"
+      when: ftp_post_check.rc == 0
+
+    - name: Output checkpoint log
+      debug:
+        msg: "Checkpoint log written to {{ checkpoint_file }}"
