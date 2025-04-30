@@ -1,3 +1,4 @@
+---
 - name: CIS 2.2.18 - Ensure web server services are not in use
   hosts: all
   become: true
@@ -8,6 +9,7 @@
     backup_dir: "/var/backups/cis_webserver_{{ ansible_date_time.iso8601_basic_short }}"
 
   tasks:
+
     - name: Create backup directory
       file:
         path: "{{ backup_dir }}"
@@ -56,19 +58,28 @@
       args:
         warn: false
 
-    - name: Remove httpd if not required
-      yum:
-        name: httpd
-        state: absent
-      when: "'no-dependency' in httpd_dependency_check.stdout"
-      ignore_errors: true  # Add if repo issues persist
-
     - name: Check if nginx is installed
       shell: "rpm -q nginx || echo 'not-installed'"
       register: nginx_check
       changed_when: false
       args:
         warn: false
+
+    - name: Disable GPG check for RHEL AppStream repo
+      ini_file:
+        path: /etc/yum.repos.d/redhat.repo
+        section: rhel-8-for-x86_64-appstream-rpms
+        option: gpgcheck
+        value: '0'
+        mode: '0644'
+      ignore_errors: true
+
+    - name: Remove httpd if not required
+      yum:
+        name: httpd
+        state: absent
+      when: "'no-dependency' in httpd_dependency_check.stdout"
+      ignore_errors: true
 
     - name: Remove nginx if installed
       yum:
