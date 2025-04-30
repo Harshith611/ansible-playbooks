@@ -22,22 +22,24 @@
         state: directory
         mode: '0755'
 
-    - name: Check if FTP is installed
-      shell: rpm -q {{ ftp_pkg }}
-      register: ftp_check
-      ignore_errors: yes
+    - name: Gather installed package facts
+      package_facts:
+
+    - name: Set fact if FTP is installed
+      set_fact:
+        ftp_installed: "{{ ftp_pkg in ansible_facts.packages }}"
 
     - name: Backup RPM list before changes (if ftp is installed)
       shell: rpm -qa > {{ backup_dir }}/rpm_list_before_ftp_removal.txt
-      when: ftp_check.rc == 0
+      when: ftp_installed
 
     - name: Log FTP status before any action
       lineinfile:
         path: "{{ checkpoint_file }}"
         create: yes
         line: >
-          {% if ftp_check.rc == 0 %}
-          FTP client was installed: {{ ftp_check.stdout }}
+          {% if ftp_installed %}
+          FTP client was installed and will be removed.
           {% else %}
           FTP client was NOT installed.
           {% endif %}
@@ -46,27 +48,29 @@
       dnf:
         name: "{{ ftp_pkg }}"
         state: absent
-      when: ftp_check.rc == 0
+      when: ftp_installed
 
-    - name: Verify FTP removal
-      shell: rpm -q {{ ftp_pkg }}
-      register: ftp_post_check
-      ignore_errors: yes
+    - name: Refresh package facts after removal
+      package_facts:
+
+    - name: Set fact if FTP is still installed
+      set_fact:
+        ftp_still_installed: "{{ ftp_pkg in ansible_facts.packages }}"
 
     - name: Log removal result
       lineinfile:
         path: "{{ checkpoint_file }}"
         line: >
-          {% if ftp_post_check.rc != 0 %}
-          FTP removal confirmed or not present.
+          {% if not ftp_still_installed %}
+          FTP removal confirmed or already not present.
           {% else %}
-          FTP removal failed: {{ ftp_post_check.stdout }}
+          FTP removal failed — package still installed.
           {% endif %}
 
     - name: Fail if FTP still installed
       fail:
         msg: "FTP package is still installed!"
-      when: ftp_post_check.rc == 0
+      when: ftp_still_installed
 
     - name: Output checkpoint log path
       debug:
