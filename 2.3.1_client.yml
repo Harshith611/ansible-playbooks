@@ -27,17 +27,22 @@
       register: ftp_check
       ignore_errors: yes
 
-    - name: Backup RPM list before changes
+    - name: Backup RPM list before changes (if ftp is installed)
       shell: rpm -qa > {{ backup_dir }}/rpm_list_before_ftp_removal.txt
       when: ftp_check.rc == 0
 
-    - name: Log pre-removal status
+    - name: Log FTP status before any action
       lineinfile:
         path: "{{ checkpoint_file }}"
-        line: "FTP client detected: {{ ftp_check.stdout }}"
-      when: ftp_check.rc == 0
+        create: yes
+        line: >
+          {% if ftp_check.rc == 0 %}
+          FTP client was installed: {{ ftp_check.stdout }}
+          {% else %}
+          FTP client was NOT installed.
+          {% endif %}
 
-    - name: Remove FTP client
+    - name: Remove FTP client if present
       dnf:
         name: "{{ ftp_pkg }}"
         state: absent
@@ -53,16 +58,16 @@
         path: "{{ checkpoint_file }}"
         line: >
           {% if ftp_post_check.rc != 0 %}
-          FTP removal successful.
+          FTP removal confirmed or not present.
           {% else %}
           FTP removal failed: {{ ftp_post_check.stdout }}
           {% endif %}
 
     - name: Fail if FTP still installed
       fail:
-        msg: "FTP package was not successfully removed!"
+        msg: "FTP package is still installed!"
       when: ftp_post_check.rc == 0
 
-    - name: Output checkpoint log
+    - name: Output checkpoint log path
       debug:
-        msg: "Checkpoint log written to {{ checkpoint_file }}"
+        msg: "Checkpoint log saved at {{ checkpoint_file }}"
