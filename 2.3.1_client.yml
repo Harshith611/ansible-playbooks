@@ -34,7 +34,6 @@
     - name: Log pre-removal status
       lineinfile:
         path: "{{ checkpoint_file }}"
-        create: yes
         line: "FTP client detected: {{ ftp_check.stdout }}"
       when: ftp_check.rc == 0
 
@@ -58,7 +57,6 @@
           {% else %}
           FTP removal failed: {{ ftp_post_check.stdout }}
           {% endif %}
-      create: yes
 
     - name: Fail if FTP still installed
       fail:
