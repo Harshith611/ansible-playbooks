@@ -51,13 +51,6 @@
         - httpd.socket
       ignore_errors: true
 
-    - name: Check if httpd is needed for dependency
-      shell: "rpm -q --whatrequires httpd || echo 'no-dependency'"
-      register: httpd_dependency_check
-      changed_when: false
-      args:
-        warn: false
-
     - name: Check if nginx is installed
       shell: "rpm -q nginx || echo 'not-installed'"
       register: nginx_check
@@ -72,13 +65,6 @@
         option: gpgcheck
         value: '0'
         mode: '0644'
-      ignore_errors: true
-
-    - name: Remove httpd if not required
-      yum:
-        name: httpd
-        state: absent
-      when: "'no-dependency' in httpd_dependency_check.stdout"
       ignore_errors: true
 
     - name: Remove nginx if installed
