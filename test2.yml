@@ -1,0 +1,58 @@
+---
+- name: Fix unowned or ungrouped files/directories
+  hosts: all
+  become: true
+  vars:
+    backup_dir: "/var/backups/orphan_files_{{ ansible_date_time.date }}"
+    replacement_owner: "root"
+    replacement_group: "root"
+  tasks:
+    - name: CHECKPOINT 1 - Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+    - name: CHECKPOINT 2 - Find orphaned files
+      command: >
+        find / \( -path /proc -o -path /sys -o -path /dev -o -path /run \) -prune
+        -o \( -nouser -o -nogroup \) -print
+      register: orphaned_files
+      changed_when: false
+      failed_when: false
+    - name: CHECKPOINT 3 - Display orphaned files (if any)
+      debug:
+        var: orphaned_files.stdout_lines
+    - name: CHECKPOINT 4 - Back up orphaned files
+      when: orphaned_files.stdout_lines | length > 0
+      block:
+        - name: Copy each orphaned file to backup dir
+          copy:
+            src: "{{ item }}"
+            dest: "{{ backup_dir }}/{{ item | basename }}"
+            remote_src: true
+            owner: root
+            group: root
+            mode: preserve
+          loop: "{{ orphaned_files.stdout_lines }}"
+          ignore_errors: yes
+          register: backup_results
+        - name: Show backup results
+          debug:
+            var: backup_results
+    - name: CHECKPOINT 5 - Fix ownership (set to root/root or desired user)
+      when: orphaned_files.stdout_lines | length > 0
+      file:
+        path: "{{ item }}"
+        owner: "{{ replacement_owner }}"
+        group: "{{ replacement_group }}"
+      loop: "{{ orphaned_files.stdout_lines }}"
+      ignore_errors: yes
+      register: chown_results
+    - name: CHECKPOINT 6 - Show ownership fix results
+      debug:
+        var: chown_results
+    - name: CHECKPOINT 7 - Summary
+      debug:
+        msg: "Fixed {{ orphaned_files.stdout_lines | length }} orphaned file(s). Backups saved in {{ backup_dir }}"
