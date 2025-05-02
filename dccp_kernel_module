@@ -1,0 +1,74 @@
+---
+- name: CIS 3.2.1 - Ensure dccp kernel module is not available
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    module_name: "dccp"
+    module_file: "/etc/modprobe.d/dccp.conf"
+    backup_dir: "/var/backups/cis_kernel_module"
+    log_file: "/var/log/cis_kernel_module_removal.log"
+
+  tasks:
+
+    - name: "Checkpoint 1 - Ensure backup directory exists"
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Checkpoint 2 - Backup existing module config if it exists"
+      copy:
+        src: "{{ module_file }}"
+        dest: "{{ backup_dir }}/dccp.conf.bak_{{ ansible_date_time.iso8601 }}"
+        remote_src: yes
+      when: ansible_facts['distribution'] != 'CoreOS' and ansible_facts['os_family'] != 'Flatcar' and
+            ansible_facts['distribution'] is search('RedHat|CentOS|Rocky|Alma') and
+            ansible_facts['distribution_major_version'] | int >= 7
+      ignore_errors: true
+
+    - name: "Checkpoint 3 - Write install rule to block module loading"
+      lineinfile:
+        path: "{{ module_file }}"
+        line: "install {{ module_name }} /bin/false"
+        create: yes
+        mode: '0644'
+        state: present
+
+    - name: "Checkpoint 4 - Write blacklist rule"
+      lineinfile:
+        path: "{{ module_file }}"
+        line: "blacklist {{ module_name }}"
+        create: yes
+        mode: '0644'
+        state: present
+
+    - name: "Checkpoint 5 - Check if module is currently loaded"
+      shell: "lsmod | grep -w '^{{ module_name }}'"
+      register: dccp_loaded
+      changed_when: false
+      failed_when: false
+
+    - name: "Checkpoint 6 - Unload module if loaded"
+      command: "modprobe -r {{ module_name }}"
+      when: dccp_loaded.stdout != ""
+      register: unload_result
+      ignore_errors: true
+
+    - name: "Checkpoint 7 - Log remediation result"
+      lineinfile:
+        path: "{{ log_file }}"
+        create: yes
+        mode: '0644'
+        line: "DCCP module status on {{ inventory_hostname }} - Blacklisted and unload attempted at {{ ansible_date_time.iso8601 }}. Unload: {{ 'Success' if unload_result.rc == 0 else 'Failed or not needed' }}"
+
+    - name: "Checkpoint 8 - Final validation: ensure module not loadable"
+      shell: "modprobe -n -v {{ module_name }}"
+      register: modprobe_check
+      changed_when: false
+
+    - name: "Checkpoint 9 - Fail if module still loadable"
+      fail:
+        msg: "DCCP module still loadable – remediation did not succeed!"
+      when: modprobe_check.stdout is not search('/bin/false')
