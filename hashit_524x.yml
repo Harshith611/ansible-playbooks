@@ -1,0 +1,120 @@
+---
+- name: CIS 5.2.4.x - Audit Configuration and Tool Hardening
+  hosts: all
+  become: yes
+  gather_facts: false
+ 
+  vars:
+    audit_tools:
+      - /sbin/auditctl
+      - /sbin/aureport
+      - /sbin/ausearch
+      - /sbin/autrace
+      - /sbin/auditd
+      - /sbin/augenrules
+ 
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+    backup_dir: "/var/backups/cis-5.2.4"
+ 
+  tasks:
+ 
+    - name: Ensure backup directory exists
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+      when: backup_dir is defined and backup_dir != ""
+      register: backup_dir_status
+ 
+    - name: Debug backup directory status
+      debug:
+        var: backup_dir_status
+ 
+    ########################################################################
+    # 5.2.4.4 - Ensure audit log files are owned by authorized group
+    ########################################################################
+    - name: "Get log group from auditd.conf or default to adm"
+      shell: awk -F '=' '/^log_group/ {print $2}' /etc/audit/auditd.conf | xargs
+      register: log_group
+      changed_when: false
+ 
+    - name: "Get audit log file directory from auditd.conf"
+      shell: awk -F '=' '/^log_file/ {print $2}' /etc/audit/auditd.conf | xargs dirname
+      register: log_dir
+      changed_when: false
+ 
+    - name: "Set group ownership of audit log files to authorized group"
+      ansible.builtin.command: >
+        find {{ log_dir.stdout }} -type f -exec chgrp {{ log_group.stdout | default('adm') }} {} +
+      register: set_log_group
+      changed_when: true
+ 
+    ########################################################################
+    # 5.2.4.5 - 5.2.4.7 - Ensure audit config file permissions and ownership
+    ########################################################################
+    - name: "Find audit configuration files"
+      find:
+        paths: /etc/audit
+        recurse: yes
+        patterns: '*.conf,*.rules'
+        file_type: file
+      register: audit_conf_files
+ 
+    - name: "Set permissions of audit config files to 0640"
+      file:
+        path: "{{ item.path }}"
+        mode: '0640'
+      loop: "{{ audit_conf_files.files }}"
+ 
+    - name: "Ensure audit config files are owned by root"
+      file:
+        path: "{{ item.path }}"
+        owner: root
+        group: root
+      loop: "{{ audit_conf_files.files }}"
+ 
+    ########################################################################
+    # 5.2.4.8 - Ensure audit tools permissions are 755 or more restrictive
+    ########################################################################
+    - name: "Remove write permissions from group/others on audit tools"
+      file:
+        path: "{{ item }}"
+        mode: '0755'
+      loop: "{{ audit_tools }}"
+      ignore_errors: true
+ 
+    ########################################################################
+    # 5.2.4.9 - Ensure audit tools are owned by root
+    ########################################################################
+    - name: "Ensure audit tools are owned by root"
+      file:
+        path: "{{ item }}"
+        owner: root
+        group: root
+      loop: "{{ audit_tools }}"
+      ignore_errors: true
+ 
+    ########################################################################
+    # Verification Steps
+    ########################################################################
+    - name: "Verify audit config file ownership & permissions"
+      shell: |
+        for f in {{ audit_conf_files.files | map(attribute='path') | join(' ') }}; do
+          stat -c "%n %U %G %a" "$f"
+        done
+      register: audit_conf_verify
+ 
+    - name: "Print audit config verification results"
+      debug:
+        var: audit_conf_verify.stdout_lines
+ 
+    - name: "Verify audit tool ownership and permissions"
+      shell: |
+        for f in {{ audit_tools | join(' ') }}; do
+          [ -e "$f" ] && stat -c "%n %U %a" "$f"
+        done
+      register: audit_tool_verify
+ 
+    - name: "Print audit tool verification results"
+      debug:
+        var: audit_tool_verify.stdout_lines
