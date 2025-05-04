@@ -1,0 +1,35 @@
+- name: Enforce password history for all users including root
+  hosts: all
+  become: true
+  vars:
+    pwhistory_conf: /etc/security/pwhistory.conf
+
+  tasks:
+
+    - name: Create timestamp for backup
+      set_fact:
+        timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
+
+    - name: Backup pwhistory.conf with timestamp
+      copy:
+        src: "{{ pwhistory_conf }}"
+        dest: "{{ pwhistory_conf }}.bak_{{ timestamp }}"
+        remote_src: true
+
+    - name: Ensure 'remember = 24' is set in pwhistory.conf
+      lineinfile:
+        path: "{{ pwhistory_conf }}"
+        regexp: '^remember\s*='
+        line: 'remember = 24'
+        create: yes
+
+    - name: Ensure 'enforce_for_root' is present in pwhistory.conf
+      lineinfile:
+        path: "{{ pwhistory_conf }}"
+        line: 'enforce_for_root'
+        state: present
+        create: yes
+
+    - name: Notify for manual reboot
+      debug:
+        msg: "Changes applied. Please reboot the system manually to apply them."
