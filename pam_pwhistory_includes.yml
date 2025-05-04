@@ -1,0 +1,51 @@
+---
+- name: Ensure pam_pwhistory includes use_authtok safely
+  hosts: all
+  become: yes
+  vars:
+    backup_time: "{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
+  tasks:
+
+    - name: Get active authselect profile
+      command: head -1 /etc/authselect/authselect.conf
+      register: authselect_profile
+
+    - name: Set profile paths
+      set_fact:
+        profile_name: "{{ authselect_profile.stdout }}"
+        profile_path: >-
+          {{ '/etc/authselect/' + authselect_profile.stdout
+             if authselect_profile.stdout.startswith('custom/')
+             else '/usr/share/authselect/default/' + authselect_profile.stdout }}
+
+    - name: Backup password-auth template with timestamp
+      copy:
+        src: "{{ item }}"
+        dest: "{{ item }}.bak_{{ backup_time }}"
+        remote_src: yes
+      loop:
+        - "{{ profile_path }}/password-auth"
+        - "{{ profile_path }}/system-auth"
+
+    - name: Ensure 'use_authtok' is present in pam_pwhistory lines
+      lineinfile:
+        path: "{{ item }}"
+        backrefs: yes
+        regexp: '^(\s*password\s+(?:requisite|required|sufficient)\s+pam_pwhistory\.so.*?)(?<!\buse_authtok\b)(\s*(?!use_authtok).*)?$'
+        line: '\1 use_authtok\2'
+        state: present
+      loop:
+        - "{{ profile_path }}/password-auth"
+        - "{{ profile_path }}/system-auth"
+
+    - name: Apply authselect changes
+      command: authselect apply-changes
+      notify: Reboot Required
+
+  handlers:
+    - name: Reboot Required
+      debug:
+        msg: |
+          Changes have been applied.
+          Please verify authentication works before rebooting.
+          Manual reboot recommended after verification.
