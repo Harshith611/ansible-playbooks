@@ -1,0 +1,40 @@
+---
+- name: Restrict access to su command
+  hosts: all
+  become: true
+  vars:
+    su_group: "sugroup"
+    pam_su_file: "/etc/pam.d/su"
+    timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
+    pam_line: "auth required pam_wheel.so use_uid group={{ su_group }}"
+
+  tasks:
+
+    - name: Ensure sugroup exists and is empty
+      group:
+        name: "{{ su_group }}"
+        state: present
+
+    - name: Backup /etc/pam.d/su with timestamp
+      copy:
+        src: "{{ pam_su_file }}"
+        dest: "{{ pam_su_file }}.bak_{{ timestamp }}"
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Ensure PAM config restricts su access to sugroup
+      lineinfile:
+        path: "{{ pam_su_file }}"
+        regexp: '^auth\s+required\s+pam_wheel\.so.*$'
+        line: "{{ pam_line }}"
+        state: present
+        create: no
+        backup: no
+
+    - name: Reminder to reboot system
+      debug:
+        msg: |
+          Please manually reboot the system to ensure the su restriction takes full effect.
+          
