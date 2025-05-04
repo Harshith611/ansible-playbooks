@@ -1,0 +1,54 @@
+---
+- name: Remediate CIS 4.4.3.2.5 - Configure maxsequence in pwquality
+  hosts: all
+  become: yes
+  vars:
+    pwquality_file: /etc/security/pwquality.conf.d/50-pwmaxsequence.conf
+    maxsequence_value: 3
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+    pam_files:
+      - system-auth
+      - password-auth
+
+  tasks:
+
+    - name: Ensure pwquality configuration directory exists
+      file:
+        path: /etc/security/pwquality.conf.d
+        state: directory
+        mode: '0755'
+
+    - name: Backup existing maxsequence config file if it exists
+      copy:
+        src: "{{ pwquality_file }}"
+        dest: "{{ pwquality_file }}.{{ timestamp }}"
+        remote_src: yes
+      when: ansible_facts['discovered_interpreter_python'] is defined and
+            lookup('ansible.builtin.file', pwquality_file, errors='ignore')
+
+    - name: Set maxsequence to 3 in pwquality.d configuration
+      lineinfile:
+        path: "{{ pwquality_file }}"
+        regexp: '^\s*maxsequence\s*='
+        line: "maxsequence = {{ maxsequence_value }}"
+        create: yes
+        mode: '0644'
+
+    - name: Get current authselect profile
+      command: "awk '/^custom\\//{print $1}' /etc/authselect/authselect.conf"
+      register: authselect_profile
+      changed_when: false
+
+    - name: Remove maxsequence option from pam_pwquality.so lines
+      replace:
+        path: "/etc/authselect/{{ authselect_profile.stdout }}/{{ item }}"
+        regexp: '(^\s*password\s+(requisite|required|sufficient)\s+pam_pwquality.so[^\n]*?)\s+maxsequence=\S+'
+        replace: '\1'
+        backup: yes
+      loop: "{{ pam_files }}"
+      notify: Apply authselect changes
+      when: authselect_profile.stdout != ""
+
+  handlers:
+    - name: Apply authselect changes
+      command: authselect apply-changes
