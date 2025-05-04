@@ -1,0 +1,47 @@
+---
+- name: Ensure rpcbind services are not in use
+  hosts: all
+  become: true
+  gather_facts: true  # Required for ansible_date_time facts
+
+  vars:
+    timestamp: "{{ ansible_date_time.date }}_{{ ansible_date_time.hour }}-{{ ansible_date_time.minute }}-{{ ansible_date_time.second }}"
+
+  tasks:
+
+    - name: Check if rpcbind.service unit file exists
+      stat:
+        path: /usr/lib/systemd/system/rpcbind.service
+      register: rpcbind_service_file
+
+    - name: Backup rpcbind.service if it exists
+      copy:
+        src: /usr/lib/systemd/system/rpcbind.service
+        dest: "/usr/lib/systemd/system/rpcbind.service.bak_{{ timestamp }}"
+        remote_src: yes
+        backup: yes
+      when: rpcbind_service_file.stat.exists
+
+    - name: Check if rpcbind.socket unit file exists
+      stat:
+        path: /usr/lib/systemd/system/rpcbind.socket
+      register: rpcbind_socket_file
+
+    - name: Backup rpcbind.socket if it exists
+      copy:
+        src: /usr/lib/systemd/system/rpcbind.socket
+        dest: "/usr/lib/systemd/system/rpcbind.socket.bak_{{ timestamp }}"
+        remote_src: yes
+        backup: yes
+      when: rpcbind_socket_file.stat.exists
+
+    - name: Stop, disable, and mask rpcbind services if running
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+        masked: true
+      loop:
+        - rpcbind.service
+        - rpcbind.socket
+      ignore_errors: true  # In case it's not installed or already inactive
