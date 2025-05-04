@@ -1,0 +1,32 @@
+---
+- name: Ensure password failed attempts lockout is configured
+  hosts: all
+  become: yes
+  vars:
+    faillock_conf: "/etc/security/faillock.conf"
+    timestamp: "{{ lookup('pipe', 'date +%F_%H-%M-%S') }}"
+    backup_file: "{{ faillock_conf }}.bak_{{ timestamp }}"
+
+  tasks:
+    - name: Backup faillock.conf with timestamp
+      copy:
+        src: "{{ faillock_conf }}"
+        dest: "{{ backup_file }}"
+        remote_src: yes
+        mode: '0644'
+
+    - name: Ensure 'deny = 5' is present in faillock.conf
+      lineinfile:
+        path: "{{ faillock_conf }}"
+        regexp: '^\s*deny\s*='
+        line: 'deny = 5'
+        state: present
+        create: yes
+        backup: no
+      notify:
+        - Show result
+
+  handlers:
+    - name: Show result
+      debug:
+        msg: "'deny = 5' ensured in {{ faillock_conf }}"
