@@ -1,0 +1,34 @@
+---
+- name: Configure Remote Login Banner (/etc/issue.net)
+  hosts: all
+  become: yes
+  vars:
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+    remote_banner: |
+          **********************************************************************************
+          *                                                                                *
+          * Welcome to {{ ansible_hostname }}{{ ' ' * (67 - ansible_hostname | length) }}  *
+          *                                                                                *
+          *                                                                                *
+          **********************************************************************************
+  tasks:
+    - name: Backup /etc/issue.net with timestamp
+      copy:
+        src: /etc/issue.net
+        dest: "/etc/issue.net.backup.{{ timestamp }}"
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Set remote login banner in /etc/issue.net
+      copy:
+        dest: /etc/issue.net
+        content: "{{ remote_banner }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Reminder for manual reboot
+      debug:
+        msg: "Remote banner set. Please manually reboot and test SSH login to verify the banner."
