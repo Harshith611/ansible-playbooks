@@ -21,7 +21,9 @@
       command: "rpm -q {{ telnet_pkg }}"
       register: telnet_installed
       ignore_errors: true
+      failed_when: false
       changed_when: false
+      warn: false
 
     - name: "Checkpoint 3 - Backup RPM info before removing telnet (only if installed)"
       shell: "rpm -qi {{ telnet_pkg }} > {{ backup_dir }}/telnet_rpm_info_$(date +%F_%T).bak"
