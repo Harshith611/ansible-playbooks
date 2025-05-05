@@ -1,0 +1,314 @@
+---
+- name: Hardening Playbook for OEL
+  hosts: all
+  become: yes
+  vars:
+    client_alive_interval: 15
+    client_alive_count_max: 3
+    tmout_value: 900
+
+  tasks:
+    - name: Check for unconfined_service_t processes
+      shell: ps -eZ | grep unconfined_service_t || true
+      register: unconfined_processes
+      changed_when: false
+
+    - name: Display unconfined_service_t processes
+      debug:
+        msg: "Found unconfined_service_t processes: {{ unconfined_processes.stdout }}"
+      when: unconfined_processes.stdout != ""
+
+    - name: Configure coredump settings
+      blockinfile:
+        path: /etc/systemd/coredump.conf
+        block: |
+          ProcessSizeMax=0
+          Storage=none
+        create: yes
+
+    - name: Configure kernel parameters via grubby
+      command: "grubby --update-kernel ALL --args '{{ item }}'"
+      loop:
+        - "audit=1"
+        - "audit_backlog_limit=8192"
+
+    - name: Stop and disable firewalld
+      service:
+        name: firewalld
+        state: stopped
+        enabled: no
+
+    - name: Remove motd files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/motd
+        - /etc/motd.d
+
+    - name: Check /etc/issue for specific strings
+      shell: grep -E -i "(\\\v|\\\r|\\\m|\\\s|$(grep '^ID=' /etc/os-release | cut -d= -f2 | sed -e 's/\"//g'))" /etc/issue || true
+      register: issue_check
+      changed_when: false
+
+    - name: Display issue check results
+      debug:
+        msg: "Specific strings found in /etc/issue"
+      when: issue_check.stdout != ""
+
+    - name: Set permissions for /etc/issue
+      file:
+        path: /etc/issue
+        owner: root
+        group: root
+        mode: 0644
+      when: "'/etc/issue' is file"
+
+    - name: Set permissions for /etc/issue.net
+      file:
+        path: /etc/issue.net
+        owner: root
+        group: root
+        mode: 0644
+      when: "'/etc/issue.net' is file"
+
+    - name: Install chrony if not present
+      package:
+        name: chrony
+        state: present
+
+    - name: Configure chronyd options
+      lineinfile:
+        path: /etc/sysconfig/chronyd
+        regexp: '^OPTIONS='
+        line: 'OPTIONS="-u chrony"'
+        create: yes
+
+    - name: Restart chronyd service
+      service:
+        name: chronyd
+        state: restarted
+
+    - name: Set cron file permissions
+      file:
+        path: "{{ item.path }}"
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: '/etc/crontab', mode: '0600' }
+        - { path: '/etc/cron.hourly', mode: '0700' }
+        - { path: '/etc/cron.daily', mode: '0700' }
+        - { path: '/etc/cron.weekly', mode: '0700' }
+        - { path: '/etc/cron.monthly', mode: '0700' }
+        - { path: '/etc/cron.d', mode: '0700' }
+      when: "item.path is file or item.path is directory"
+
+    - name: Set permissions for cron.deny if exists
+      file:
+        path: /etc/cron.deny
+        owner: root
+        group: root
+        mode: 0640
+      when: "'/etc/cron.deny' is file"
+
+    - name: Set permissions for at.deny if exists
+      file:
+        path: /etc/at.deny
+        owner: root
+        group: root
+        mode: 0640
+      when: "'/etc/at.deny' is file"
+
+    - name: Disable and blacklist rds module
+      block:
+        - name: Create rds modprobe config
+          copy:
+            dest: /etc/modprobe.d/rds.conf
+            content: |
+              install rds /bin/false
+              blacklist rds
+
+        - name: Remove rds module if loaded
+          command: modprobe -r rds
+          ignore_errors: yes
+          when: "'rds' in ansible_facts.kernel_modules"
+
+    - name: Configure sysctl parameters
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      loop:
+        - { name: 'net.ipv4.ip_forward', value: '0' }
+        - { name: 'net.ipv6.conf.all.forwarding', value: '0' }
+        - { name: 'net.ipv4.conf.all.send_redirects', value: '0' }
+        - { name: 'net.ipv4.conf.default.send_redirects', value: '0' }
+        - { name: 'net.ipv4.icmp_ignore_bogus_error_responses', value: '1' }
+        - { name: 'net.ipv4.icmp_echo_ignore_broadcasts', value: '1' }
+        - { name: 'net.ipv4.conf.all.accept_redirects', value: '0' }
+        - { name: 'net.ipv4.conf.default.accept_redirects', value: '0' }
+        - { name: 'net.ipv4.conf.all.secure_redirects', value: '0' }
+        - { name: 'net.ipv4.conf.default.secure_redirects', value: '0' }
+        - { name: 'net.ipv4.conf.all.rp_filter', value: '1' }
+        - { name: 'net.ipv4.conf.default.rp_filter', value: '1' }
+        - { name: 'net.ipv4.conf.all.accept_source_route', value: '0' }
+        - { name: 'net.ipv4.conf.default.accept_source_route', value: '0' }
+        - { name: 'net.ipv6.conf.all.accept_source_route', value: '0' }
+        - { name: 'net.ipv6.conf.default.accept_source_route', value: '0' }
+        - { name: 'net.ipv4.conf.all.log_martians', value: '1' }
+        - { name: 'net.ipv4.conf.default.log_martians', value: '1' }
+        - { name: 'net.ipv4.tcp_syncookies', value: '1' }
+        - { name: 'net.ipv6.conf.all.accept_ra', value: '0' }
+        - { name: 'net.ipv6.conf.default.accept_ra', value: '0' }
+        - { name: 'kernel.randomize_va_space', value: '2' }
+        - { name: 'kernel.yama.ptrace_scope', value: '1' }
+
+    - name: Flush routing tables
+      command: "{{ item }}"
+      loop:
+        - "sysctl -w net.ipv4.route.flush=1"
+        - "sysctl -w net.ipv6.route.flush=1"
+
+    - name: Backup sshd_config
+      command: cp -p /etc/ssh/sshd_config /etc/ssh/sshd_config.bak_11_dec_2024
+      args:
+        creates: /etc/ssh/sshd_config.bak_11_dec_2024
+
+    - name: Set sshd_config permissions
+      file:
+        path: /etc/ssh/sshd_config
+        mode: 0600
+
+    - name: Configure SSH settings
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: present
+      loop:
+        - { regexp: '^ClientAliveInterval', line: 'ClientAliveInterval {{ client_alive_interval }}' }
+        - { regexp: '^ClientAliveCountMax', line: 'ClientAliveCountMax {{ client_alive_count_max }}' }
+        - { regexp: '^Banner', line: 'Banner /etc/issue.net' }
+        - { regexp: '^DisableForwarding', line: 'DisableForwarding no' }
+        - { regexp: '^GSSAPIAuthentication', line: 'GSSAPIAuthentication no' }
+        - { regexp: '^HostbasedAuthentication', line: 'HostbasedAuthentication no' }
+        - { regexp: '^IgnoreRhosts', line: 'IgnoreRhosts yes' }
+        - { regexp: '^LoginGraceTime', line: 'LoginGraceTime 2m' }
+        - { regexp: '^LogLevel', line: 'LogLevel INFO' }
+        - { regexp: '^MaxAuthTries', line: 'MaxAuthTries 6' }
+        - { regexp: '^MaxStartups', line: 'MaxStartups 10:30:100' }
+        - { regexp: '^MaxSessions', line: 'MaxSessions 10' }
+        - { regexp: '^PermitEmptyPasswords', line: 'PermitEmptyPasswords no' }
+        - { regexp: '^PermitRootLogin', line: 'PermitRootLogin yes' }
+        - { regexp: '^PermitUserEnvironment', line: 'PermitUserEnvironment no' }
+        - { regexp: '^UsePAM', line: 'UsePAM yes' }
+
+    - name: Restart sshd
+      service:
+        name: sshd
+        state: restarted
+
+    - name: Install sudo if not present
+      package:
+        name: sudo
+        state: present
+
+    - name: Create sugroup if not exists
+      group:
+        name: sugroup
+        state: present
+
+    - name: Configure PAM for sugroup
+      lineinfile:
+        path: /etc/pam.d/su
+        line: 'auth required pam_wheel.so use_uid group=sugroup'
+        insertafter: EOF
+        create: yes
+
+    - name: Set umask in root bashrc
+      blockinfile:
+        path: /root/.bashrc
+        block: |
+          umask 0027
+
+    - name: Configure TMOUT in /etc/profile
+      blockinfile:
+        path: /etc/profile
+        block: |
+          TMOUT={{ tmout_value }}
+          readonly TMOUT
+          export TMOUT
+
+    - name: Install rsyslog if not present
+      package:
+        name: rsyslog
+        state: present
+
+    - name: Enable and start rsyslog
+      service:
+        name: rsyslog
+        enabled: yes
+        state: started
+
+    - name: Configure journald to forward to rsyslog
+      lineinfile:
+        path: /etc/systemd/journald.conf
+        regexp: '^ForwardToSyslog='
+        line: 'ForwardToSyslog=yes'
+        state: present
+
+    - name: Restart journald
+      service:
+        name: systemd-journald
+        state: restarted
+
+    - name: Configure auditd settings
+      blockinfile:
+        path: /etc/audit/auditd.conf
+        block: |
+          max_log_file = 10
+          max_log_file_action = rotate
+          space_left_action = email
+          admin_space_left_action = halt
+          disk_full_action = SUSPEND
+          disk_error_action = SUSPEND
+
+    - name: Restart auditd
+      service:
+        name: auditd
+        state: restarted
+
+    - name: Set permissions for sensitive files
+      file:
+        path: "{{ item.path }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: '/etc/passwd', mode: '0644' }
+        - { path: '/etc/shadow', mode: '0640' }
+        - { path: '/etc/gshadow', mode: '0640' }
+
+    - name: Find files without a group
+      command: find {{ item }} -xdev -nogroup
+      loop: "{{ ansible_mounts | map(attribute='mount') | list }}"
+      register: nogroup_files
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Find files without a user
+      command: find {{ item }} -xdev -nouser
+      loop: "{{ ansible_mounts | map(attribute='mount') | list }}"
+      register: nouser_files
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Display files without group
+      debug:
+        var: nogroup_files.results
+      when: nogroup_files.results | map(attribute='stdout') | join('') != ""
+
+    - name: Display files without user
+      debug:
+        var: nouser_files.results
+      when: nouser_files.results | map(attribute='stdout') | join('') != ""
