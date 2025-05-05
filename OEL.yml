@@ -7,6 +7,11 @@
     client_alive_count_max: 3
     tmout_value: 900
 
+  handlers:
+    - name: reboot required
+      set_fact:
+        reboot_required: true
+
   tasks:
     - name: Check for unconfined_service_t processes
       shell: ps -eZ | grep unconfined_service_t || true
@@ -274,11 +279,10 @@
           admin_space_left_action = halt
           disk_full_action = SUSPEND
           disk_error_action = SUSPEND
+      notify: reboot required
 
-    - name: Restart auditd
-      service:
-        name: auditd
-        state: restarted
+    - name: Flush handlers
+      meta: flush_handlers
 
     - name: Set permissions for sensitive files
       file:
@@ -312,3 +316,8 @@
       debug:
         var: nouser_files.results
       when: nouser_files.results | map(attribute='stdout') | join('') != ""
+
+    - name: Warn about required reboot
+      debug:
+        msg: "Auditd configuration updated. System reboot required to apply changes."
+      when: reboot_required is defined and reboot_required
