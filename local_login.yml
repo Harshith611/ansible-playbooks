@@ -1,0 +1,34 @@
+---
+- name: Ensure local login warning banner is configured properly
+  hosts: all
+  become: yes
+  vars:
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+  tasks:
+    - name: Create backup of /etc/issue with timestamp
+      copy:
+        src: /etc/issue
+        dest: "/etc/issue.backup.{{ timestamp }}"
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0644'
+      when: ansible_facts['os_family'] == "RedHat" or ansible_facts['os_family'] == "Debian"
+
+    - name: Set local login banner in /etc/issue
+      copy:
+        dest: /etc/issue
+        content: |
+          **********************************************************************************
+          *                                                                                *
+          * Welcome to {{ ansible_hostname }}{{ ' ' * (67 - ansible_hostname | length) }}  *
+          *                                                                                *
+          *                                                                                *
+          **********************************************************************************
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Reminder to manually reboot system
+      debug:
+        msg: "Manual Reboot Required: Please reboot the system to verify the new login banner."
