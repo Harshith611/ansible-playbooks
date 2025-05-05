@@ -1,0 +1,83 @@
+---
+- name: Ensure /etc/motd has the correct banner with hostname
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    motd_file: /etc/motd
+    backup_suffix: "{{ ansible_date_time.epoch }}"
+    banner_width: 84  # total width of banner box
+
+  tasks:
+    - name: Check if /etc/update-motd.d exists (indicates dynamic MOTD)
+      stat:
+        path: /etc/update-motd.d
+      register: motd_dynamic
+
+    - name: Fail if dynamic MOTD system detected
+      fail:
+        msg: >
+          Dynamic MOTD system detected at /etc/update-motd.d.
+          Please use update-motd.d scripts instead of /etc/motd.
+      when: motd_dynamic.stat.exists
+      tags: sanity
+
+    - name: Set expected banner content with hostname (padded safely)
+      set_fact:
+        hostname_trunc: "{{ ansible_hostname | truncate(60, True, '') }}"
+        padded_hostname: "{{ hostname_trunc + (' ' * (67 - hostname_trunc | length)) }}"
+        expected_banner: |
+          **********************************************************************************
+          *                                                                                *
+          * Welcome to {{ padded_hostname }}*
+          *                                                                                *
+          *                                                                                *
+          **********************************************************************************
+
+    - name: Check if /etc/motd exists
+      stat:
+        path: "{{ motd_file }}"
+      register: motd_stat
+
+    - name: Read current /etc/motd content (if exists)
+      slurp:
+        path: "{{ motd_file }}"
+      when: motd_stat.stat.exists
+      register: motd_content
+
+    - name: Normalize current MOTD content
+      set_fact:
+        current_motd: "{{ motd_content.content | b64decode | regex_replace('\\s+$', '') }}"
+      when: motd_stat.stat.exists
+
+    - name: Normalize expected MOTD content
+      set_fact:
+        expected_banner_norm: "{{ expected_banner | regex_replace('\\s+$', '') }}"
+
+    - name: Backup existing MOTD if different
+      copy:
+        src: "{{ motd_file }}"
+        dest: "{{ motd_file }}.bak.{{ backup_suffix }}"
+        remote_src: true
+      when:
+        - motd_stat.stat.exists
+        - current_motd != expected_banner_norm
+
+    - name: Update /etc/motd if content differs or if not exists
+      copy:
+        content: "{{ expected_banner }}"
+        dest: "{{ motd_file }}"
+        owner: root
+        group: root
+        mode: '0644'
+      when: not motd_stat.stat.exists or current_motd != expected_banner_norm
+
+    - name: Log banner change to audit log
+      lineinfile:
+        path: /var/log/motd_changes.log
+        create: yes
+        owner: root
+        group: root
+        mode: '0644'
+        line: "MOTD updated on {{ ansible_date_time.iso8601 }} by Ansible on {{ inventory_hostname }}"
+      when: not motd_stat.stat.exists or current_motd != expected_banner_norm
