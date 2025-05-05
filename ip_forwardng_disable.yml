@@ -1,0 +1,85 @@
+---
+- name: Ensure IP forwarding is disabled (CIS 3.3.1)
+  hosts: all
+  become: yes
+  vars:
+    ipv4_sysctl_conf: "/etc/sysctl.d/60-netipv4_sysctl.conf"
+    ipv6_sysctl_conf: "/etc/sysctl.d/60-netipv6_sysctl.conf"
+    backup_dir: "/var/backups/sysctl_cis"
+    checkpoint: "/var/log/cis_ipforwarding_checkpoint.log"
+
+  tasks:
+
+    - name: "Checkpoint - already applied check"
+      stat:
+        path: "{{ checkpoint }}"
+      register: checkpoint_status
+
+    - name: "Skip if checkpoint file exists (already applied)"
+      meta: end_play
+      when: checkpoint_status.stat.exists
+
+    - name: "Create backup directory"
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Backup existing IPv4 sysctl file (if present)"
+      copy:
+        src: "{{ ipv4_sysctl_conf }}"
+        dest: "{{ backup_dir }}/60-netipv4_sysctl.conf.bak"
+        remote_src: yes
+      when: ansible_facts['os_family'] != 'Windows' and
+            ansible_facts['distribution'] != 'MacOSX'
+      ignore_errors: yes
+
+    - name: "Backup existing IPv6 sysctl file (if present)"
+      copy:
+        src: "{{ ipv6_sysctl_conf }}"
+        dest: "{{ backup_dir }}/60-netipv6_sysctl.conf.bak"
+        remote_src: yes
+      ignore_errors: yes
+
+    - name: "Disable IPv4 forwarding persistently"
+      copy:
+        dest: "{{ ipv4_sysctl_conf }}"
+        content: |
+          net.ipv4.ip_forward = 0
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: "Disable IPv6 forwarding persistently"
+      copy:
+        dest: "{{ ipv6_sysctl_conf }}"
+        content: |
+          net.ipv6.conf.all.forwarding = 0
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: "Apply IPv4 and IPv6 forwarding changes at runtime"
+      shell: |
+        sysctl -w net.ipv4.ip_forward=0
+        sysctl -w net.ipv6.conf.all.forwarding=0
+        sysctl -w net.ipv4.route.flush=1
+        sysctl -w net.ipv6.route.flush=1
+      args:
+        warn: false
+
+    - name: "Reload sysctl settings from all files"
+      command: sysctl --system
+
+    - name: "Create checkpoint log"
+      copy:
+        content: "CIS IP forwarding hardening applied on {{ ansible_date_time.date }} {{ ansible_date_time.time }}\n"
+        dest: "{{ checkpoint }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: "Notify success"
+      debug:
+        msg: "✅ CIS 3.3.1: IP forwarding disabled safely and persistently."
+
