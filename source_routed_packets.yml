@@ -1,0 +1,79 @@
+---
+- name: CIS 3.3.8 - Disable source routed packets (IPv4 and IPv6)
+  hosts: all
+  become: yes
+  vars:
+    ipv4_settings:
+      - { key: "net.ipv4.conf.all.accept_source_route", value: "0" }
+      - { key: "net.ipv4.conf.default.accept_source_route", value: "0" }
+    ipv6_settings:
+      - { key: "net.ipv6.conf.all.accept_source_route", value: "0" }
+      - { key: "net.ipv6.conf.default.accept_source_route", value: "0" }
+    sysctl_ipv4_file: "/etc/sysctl.d/60-netipv4_sysctl.conf"
+    sysctl_ipv6_file: "/etc/sysctl.d/60-netipv6_sysctl.conf"
+
+  tasks:
+
+    - name: "Checkpoint | Backup sysctl config files"
+      copy:
+        src: "{{ item }}"
+        dest: "{{ item }}.bak_{{ lookup('pipe', 'date +%F_%H-%M-%S') }}"
+        remote_src: yes
+      loop:
+        - /etc/sysctl.conf
+        - /etc/sysctl.d/99-sysctl.conf
+        - "{{ sysctl_ipv4_file }}"
+        - "{{ sysctl_ipv6_file }}"
+      ignore_errors: yes
+
+    - name: "Checkpoint | Ensure required files exist"
+      file:
+        path: "{{ item }}"
+        state: touch
+        mode: '0644'
+      loop:
+        - "{{ sysctl_ipv4_file }}"
+        - "{{ sysctl_ipv6_file }}"
+
+    - name: "Harden | Apply IPv4 source route settings"
+      lineinfile:
+        path: "{{ sysctl_ipv4_file }}"
+        regexp: "^{{ item.key }}\\s*=.*"
+        line: "{{ item.key }} = {{ item.value }}"
+        create: yes
+        state: present
+      loop: "{{ ipv4_settings }}"
+
+    - name: "Harden | Apply IPv6 source route settings (only if IPv6 is enabled)"
+      lineinfile:
+        path: "{{ sysctl_ipv6_file }}"
+        regexp: "^{{ item.key }}\\s*=.*"
+        line: "{{ item.key }} = {{ item.value }}"
+        create: yes
+        state: present
+      loop: "{{ ipv6_settings }}"
+      when: ansible_sysctl['net.ipv6.conf.all.disable_ipv6'] is not defined or ansible_sysctl['net.ipv6.conf.all.disable_ipv6'] == '0'
+
+    - name: "Apply | Set running kernel parameters (IPv4)"
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      loop: "{{ ipv4_settings }}"
+
+    - name: "Apply | Set running kernel parameters (IPv6)"
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      loop: "{{ ipv6_settings }}"
+      when: ansible_sysctl['net.ipv6.conf.all.disable_ipv6'] is not defined or ansible_sysctl['net.ipv6.conf.all.disable_ipv6'] == '0'
+
+    - name: "Flush routing cache (IPv4)"
+      command: sysctl -w net.ipv4.route.flush=1
+
+    - name: "Flush routing cache (IPv6)"
+      command: sysctl -w net.ipv6.route.flush=1
+      when: ansible_sysctl['net.ipv6.conf.all.disable_ipv6'] is not defined or ansible_sysctl['net.ipv6.conf.all.disable_ipv6'] == '0'
