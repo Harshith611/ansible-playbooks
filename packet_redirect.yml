@@ -1,0 +1,67 @@
+---
+- name: "CIS 3.3.2 - Ensure packet redirect sending is disabled"
+  hosts: all
+  become: yes
+  vars:
+    sysctl_file: "/etc/sysctl.d/60-netipv4_sysctl.conf"
+    backup_dir: "/var/backups/sysctl_cis"
+    checkpoint: "/var/log/cis_redirects_checkpoint.log"
+
+  tasks:
+
+    - name: "Check if CIS 3.3.2 checkpoint already exists"
+      stat:
+        path: "{{ checkpoint }}"
+      register: checkpoint_status
+
+    - name: "Skip task if already hardened (checkpoint present)"
+      meta: end_play
+      when: checkpoint_status.stat.exists
+
+    - name: "Create backup directory"
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Backup sysctl config file if exists"
+      copy:
+        src: "{{ sysctl_file }}"
+        dest: "{{ backup_dir }}/60-netipv4_sysctl.conf.bak"
+        remote_src: yes
+      ignore_errors: yes
+
+    - name: "Set persistent sysctl parameters to disable ICMP redirects"
+      blockinfile:
+        path: "{{ sysctl_file }}"
+        create: yes
+        block: |
+          net.ipv4.conf.all.send_redirects = 0
+          net.ipv4.conf.default.send_redirects = 0
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: "Apply ICMP redirect settings immediately"
+      shell: |
+        sysctl -w net.ipv4.conf.all.send_redirects=0
+        sysctl -w net.ipv4.conf.default.send_redirects=0
+        sysctl -w net.ipv4.route.flush=1
+      args:
+        warn: false
+
+    - name: "Reload sysctl settings from files"
+      command: sysctl --system
+
+    - name: "Create checkpoint to prevent reapplying"
+      copy:
+        dest: "{{ checkpoint }}"
+        content: "CIS 3.3.2 applied on {{ ansible_date_time.date }} {{ ansible_date_time.time }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: "Notify success"
+      debug:
+        msg: "Packet redirect sending disabled and safely persisted."
+
