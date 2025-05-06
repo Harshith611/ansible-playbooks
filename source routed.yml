@@ -91,5 +91,5 @@
     - name: "Checkpoint | Display summary"
       debug:
         msg: >
-          ✅ CIS 3.3.8 hardening completed.
+           hardening completed.
           Backups were created and settings are now persistent.
