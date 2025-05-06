@@ -1,0 +1,95 @@
+---
+- name: CIS 3.3.8 - Ensure source routed packets are not accepted
+  hosts: all
+  become: true
+  vars:
+    ipv4_params:
+      - { key: "net.ipv4.conf.all.accept_source_route", value: "0" }
+      - { key: "net.ipv4.conf.default.accept_source_route", value: "0" }
+
+    ipv6_params:
+      - { key: "net.ipv6.conf.all.accept_source_route", value: "0" }
+      - { key: "net.ipv6.conf.default.accept_source_route", value: "0" }
+
+    sysctl_ipv4_file: "/etc/sysctl.d/60-netipv4_sysctl.conf"
+    sysctl_ipv6_file: "/etc/sysctl.d/60-netipv6_sysctl.conf"
+    backup_time: "{{ lookup('pipe', 'date +%F_%H-%M-%S') }}"
+
+  tasks:
+
+    - name: "Checkpoint | Display intention"
+      debug:
+        msg: >
+          This playbook disables source routed packets for IPv4 and IPv6.
+          Backup of existing config will be taken. Route cache will be flushed after setting values.
+
+    - name: "Checkpoint | Backup sysctl configuration files (if present)"
+      copy:
+        src: "{{ item }}"
+        dest: "{{ item }}.bak.{{ backup_time }}"
+        remote_src: true
+      loop:
+        - /etc/sysctl.conf
+        - /usr/lib/sysctl.d/50-default.conf
+        - "{{ sysctl_ipv4_file }}"
+        - "{{ sysctl_ipv6_file }}"
+      ignore_errors: yes
+
+    - name: "Checkpoint | Ensure sysctl.d files exist"
+      file:
+        path: "{{ item }}"
+        state: touch
+        mode: '0644'
+      loop:
+        - "{{ sysctl_ipv4_file }}"
+        - "{{ sysctl_ipv6_file }}"
+
+    - name: "Harden | Set IPv4 source route settings persistently"
+      lineinfile:
+        path: "{{ sysctl_ipv4_file }}"
+        regexp: "^{{ item.key }}\\s*=.*"
+        line: "{{ item.key }} = {{ item.value }}"
+        state: present
+        create: yes
+      loop: "{{ ipv4_params }}"
+
+    - name: "Harden | Set IPv6 source route settings persistently (only if IPv6 is enabled)"
+      lineinfile:
+        path: "{{ sysctl_ipv6_file }}"
+        regexp: "^{{ item.key }}\\s*=.*"
+        line: "{{ item.key }} = {{ item.value }}"
+        state: present
+        create: yes
+      loop: "{{ ipv6_params }}"
+      when: ansible_facts['ansible_sysctl']['net.ipv6.conf.all.disable_ipv6'] is not defined
+            or ansible_facts['ansible_sysctl']['net.ipv6.conf.all.disable_ipv6'] == "0"
+
+    - name: "Apply | Load IPv4 parameters into running config"
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+      loop: "{{ ipv4_params }}"
+
+    - name: "Apply | Load IPv6 parameters into running config"
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+      loop: "{{ ipv6_params }}"
+      when: ansible_facts['ansible_sysctl']['net.ipv6.conf.all.disable_ipv6'] is not defined
+            or ansible_facts['ansible_sysctl']['net.ipv6.conf.all.disable_ipv6'] == "0"
+
+    - name: "Post-Apply | Flush IPv4 route cache"
+      command: sysctl -w net.ipv4.route.flush=1
+
+    - name: "Post-Apply | Flush IPv6 route cache"
+      command: sysctl -w net.ipv6.route.flush=1
+      when: ansible_facts['ansible_sysctl']['net.ipv6.conf.all.disable_ipv6'] is not defined
+            or ansible_facts['ansible_sysctl']['net.ipv6.conf.all.disable_ipv6'] == "0"
+
+    - name: "Checkpoint | Display summary"
+      debug:
+        msg: >
+          ✅ CIS 3.3.8 hardening completed.
+          Backups were created and settings are now persistent.
