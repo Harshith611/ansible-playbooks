@@ -1,0 +1,60 @@
+---
+- name: Ensure reverse path filtering is enabled securely (CIS 3.3.7)
+  hosts: all
+  become: yes
+  vars:
+    backup_dir: "/var/backups/sysctl_rpfilter/{{ ansible_date_time.iso8601 }}"
+    sysctl_conf_target: "/etc/sysctl.d/60-netipv4_sysctl.conf"
+
+  tasks:
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Backup existing sysctl configuration files
+      copy:
+        src: "{{ item }}"
+        dest: "{{ backup_dir }}/"
+        remote_src: yes
+      with_items:
+        - "/etc/sysctl.conf"
+        - "/etc/sysctl.d/99-sysctl.conf"
+        - "{{ sysctl_conf_target }}"
+      ignore_errors: yes
+
+    - name: Read current rp_filter values
+      shell: |
+        echo "all=$(sysctl -n net.ipv4.conf.all.rp_filter)"
+        echo "default=$(sysctl -n net.ipv4.conf.default.rp_filter)"
+      register: rp_filter_status
+
+    - name: Warn if rp_filter is set to 2 (loose mode)
+      debug:
+        msg: "WARNING: rp_filter is set to loose mode (2). Ensure asymmetric routing is not in use before applying changes."
+      when: rp_filter_status.stdout is search('=2')
+
+    - name: Configure strict reverse path filtering
+      blockinfile:
+        path: "{{ sysctl_conf_target }}"
+        create: yes
+        block: |
+          # CIS 3.3.7 - Reverse Path Filtering
+          net.ipv4.conf.all.rp_filter = 1
+          net.ipv4.conf.default.rp_filter = 1
+      notify: Apply sysctl settings
+
+    - name: Ensure sysctl parameters are applied live
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      loop:
+        - { name: "net.ipv4.conf.all.rp_filter", value: "1" }
+        - { name: "net.ipv4.conf.default.rp_filter", value: "1" }
+
+  handlers:
+    - name: Apply sysctl settings
+      command: sysctl --system
