@@ -1,0 +1,71 @@
+---
+- name: "CIS 4.2.20 | Ensure SSH PermitUserEnvironment is disabled"
+  hosts: all
+  become: yes
+  vars:
+    sshd_config_path: "/etc/ssh/sshd_config"
+    backup_dir: "/var/backups/ssh_cis"
+    checkpoint_file: "/var/log/cis_4.2.20_permituserenv_applied.chk"
+
+  tasks:
+
+    - name: "Check if CIS 4.2.20 has already been applied"
+      stat:
+        path: "{{ checkpoint_file }}"
+      register: checkpoint_stat
+
+    - name: "Create backup directory if not exists"
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0750'
+
+    - name: "Backup sshd_config before modifying"
+      copy:
+        src: "{{ sshd_config_path }}"
+        dest: "{{ backup_dir }}/sshd_config.bak_{{ ansible_date_time.iso8601 }}"
+        remote_src: yes
+      when: not checkpoint_stat.stat.exists
+
+    - name: "Remove all existing PermitUserEnvironment entries"
+      lineinfile:
+        path: "{{ sshd_config_path }}"
+        regexp: '^[\s#]*PermitUserEnvironment\s+'
+        state: absent
+        backrefs: yes
+
+    - name: "Insert 'PermitUserEnvironment no' at top before any Include"
+      blockinfile:
+        path: "{{ sshd_config_path }}"
+        block: |
+          PermitUserEnvironment no
+        insertbefore: '^Include'
+        marker: "# {mark} CIS 4.2.20 PermitUserEnvironment"
+        create: no
+
+    - name: "Validate sshd_config before restart"
+      command: sshd -t
+      register: sshd_check
+      ignore_errors: yes
+
+    - name: "Abort if sshd config test fails"
+      fail:
+        msg: "sshd config test failed, not restarting SSH. Check manually!"
+      when: sshd_check.rc != 0
+
+    - name: "Restart SSH service if config is valid"
+      service:
+        name: sshd
+        state: restarted
+      when: sshd_check.rc == 0
+
+    - name: "Create checkpoint for CIS 4.2.20"
+      file:
+        path: "{{ checkpoint_file }}"
+        state: touch
+        mode: '0600'
+
+    - name: "Success Message"
+      debug:
+        msg: "CIS 4.2.20 enforced: PermitUserEnvironment set to 'no'. SSH service restarted successfully."
+
