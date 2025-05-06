@@ -1,0 +1,62 @@
+---
+- name: "CIS 3.3.9 | Ensure suspicious packets are logged"
+  hosts: all
+  become: yes
+  vars:
+    backup_dir: "/var/backups/sysctl_cis"
+    sysctl_conf_ipv4: "/etc/sysctl.d/60-netipv4_sysctl.conf"
+    cis_checkpoint: "/var/log/cis_3.3.9_martians_applied.chk"
+
+  tasks:
+
+    - name: "Check if CIS 3.3.9 already applied"
+      stat:
+        path: "{{ cis_checkpoint }}"
+      register: checkpoint_file
+
+    - name: "Create backup directory if not exists"
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0750'
+
+    - name: "Backup sysctl IPv4 config if rule not already applied"
+      copy:
+        src: "{{ sysctl_conf_ipv4 }}"
+        dest: "{{ backup_dir }}/60-netipv4_sysctl.conf.bak_{{ ansible_date_time.iso8601 }}"
+        remote_src: yes
+      when: not checkpoint_file.stat.exists and ansible_facts['os_family'] == "RedHat"
+
+    - name: "Ensure martian logging sysctl entries are present"
+      blockinfile:
+        path: "{{ sysctl_conf_ipv4 }}"
+        marker: "# {mark} CIS 3.3.9 log_martians"
+        block: |
+          net.ipv4.conf.all.log_martians = 1
+          net.ipv4.conf.default.log_martians = 1
+        create: yes
+        mode: '0644'
+
+    - name: "Apply sysctl changes live"
+      sysctl:
+        name: "{{ item }}"
+        value: "1"
+        state: present
+        reload: yes
+      loop:
+        - net.ipv4.conf.all.log_martians
+        - net.ipv4.conf.default.log_martians
+
+    - name: "Flush IPv4 routing table (optional but recommended)"
+      command: sysctl -w net.ipv4.route.flush=1
+
+    - name: "Create checkpoint file for CIS 3.3.9"
+      file:
+        path: "{{ cis_checkpoint }}"
+        state: touch
+        mode: '0600'
+
+    - name: "Reboot is NOT required for this rule"
+      debug:
+        msg: "CIS 3.3.9 successfully enforced; reboot not required."
+
