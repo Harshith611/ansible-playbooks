@@ -1,0 +1,88 @@
+---
+- name: "CIS 3.3.5 - Ensure ICMP Redirects Are Not Accepted"
+  hosts: all
+  become: yes
+  vars:
+    ipv4_file: "/etc/sysctl.d/60-netipv4_sysctl.conf"
+    ipv6_file: "/etc/sysctl.d/60-netipv6_sysctl.conf"
+    backup_dir: "/var/backups/sysctl_cis"
+    checkpoint: "/var/log/cis_icmp_redirect_checkpoint.log"
+
+  tasks:
+
+    - name: "Check if CIS 3.3.5 checkpoint exists"
+      stat:
+        path: "{{ checkpoint }}"
+      register: checkpoint_status
+
+    - name: "Skip task if already hardened (checkpoint exists)"
+      meta: end_play
+      when: checkpoint_status.stat.exists
+
+    - name: "Create backup directory"
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Backup IPv4 sysctl config if it exists"
+      copy:
+        src: "{{ ipv4_file }}"
+        dest: "{{ backup_dir }}/60-netipv4_sysctl.conf.bak"
+        remote_src: yes
+      ignore_errors: yes
+
+    - name: "Backup IPv6 sysctl config if it exists"
+      copy:
+        src: "{{ ipv6_file }}"
+        dest: "{{ backup_dir }}/60-netipv6_sysctl.conf.bak"
+        remote_src: yes
+      ignore_errors: yes
+
+    - name: "Configure IPv4 ICMP redirect rejection persistently"
+      blockinfile:
+        path: "{{ ipv4_file }}"
+        create: yes
+        block: |
+          net.ipv4.conf.all.accept_redirects = 0
+          net.ipv4.conf.default.accept_redirects = 0
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: "Configure IPv6 ICMP redirect rejection persistently"
+      blockinfile:
+        path: "{{ ipv6_file }}"
+        create: yes
+        block: |
+          net.ipv6.conf.all.accept_redirects = 0
+          net.ipv6.conf.default.accept_redirects = 0
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: "Apply sysctl settings at runtime"
+      shell: |
+        sysctl -w net.ipv4.conf.all.accept_redirects=0
+        sysctl -w net.ipv4.conf.default.accept_redirects=0
+        sysctl -w net.ipv6.conf.all.accept_redirects=0
+        sysctl -w net.ipv6.conf.default.accept_redirects=0
+        sysctl -w net.ipv4.route.flush=1
+        sysctl -w net.ipv6.route.flush=1
+      args:
+        warn: false
+
+    - name: "Reload sysctl settings system-wide"
+      command: sysctl --system
+
+    - name: "Mark CIS 3.3.5 checkpoint"
+      copy:
+        dest: "{{ checkpoint }}"
+        content: "CIS 3.3.5 applied on {{ ansible_date_time.date }} {{ ansible_date_time.time }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: "Confirm successful completion"
+      debug:
+        msg: " ICMP Redirects are now blocked for both IPv4 and IPv6."
