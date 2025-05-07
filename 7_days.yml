@@ -1,0 +1,38 @@
+---
+- name: Enforce password aging warning policy
+  hosts: all
+  become: yes
+  vars:
+    login_defs_file: /etc/login.defs
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+    login_defs_backup: "/etc/login.defs.bak.{{ timestamp }}"
+
+  tasks:
+
+    - name: Backup /etc/login.defs with timestamp
+      copy:
+        src: "{{ login_defs_file }}"
+        dest: "{{ login_defs_backup }}"
+        remote_src: yes
+        backup: no
+
+    - name: Ensure PASS_WARN_AGE is set to 7 in /etc/login.defs
+      lineinfile:
+        path: "{{ login_defs_file }}"
+        regexp: '^\s*PASS_WARN_AGE'
+        line: 'PASS_WARN_AGE   7'
+        state: present
+        create: yes
+
+    - name: Set warning age for all users with shell /bin/bash to 7
+      shell: |
+        for user in $(awk -F: '$7 == "/bin/bash" { print $1 }' /etc/passwd); do
+          chage --warndays 7 "$user"
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Reminder - Manual Reboot Required
+      debug:
+        msg: "Configuration applied. Please manually reboot the system to verify changes."
