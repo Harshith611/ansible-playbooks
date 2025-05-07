@@ -1,0 +1,38 @@
+---
+- name: Ensure AIDE is installed and initialized
+  hosts: all
+  become: yes
+  tasks:
+    - name: Install AIDE
+      yum:
+        name: aide
+        state: present
+
+    - name: Create backup directory if missing
+      file:
+        path: /var/lib/aide/backups
+        state: directory
+        mode: '0755'
+
+    - name: Set timestamp variable
+      command: date '+%Y%m%d-%H%M%S'
+      register: timestamp
+      changed_when: false
+
+    - name: Backup existing AIDE database (Pre-Initialization)
+      shell: cp /var/lib/aide/aide.db.gz /var/lib/aide/backups/aide.db.gz-before-{{ timestamp.stdout }}
+      args:
+        removes: /var/lib/aide/aide.db.gz
+      ignore_errors: yes  # Prevent failure if no previous database exists
+
+    - name: Initialize AIDE database
+      command: aide --init
+      args:
+        creates: /var/lib/aide/aide.db.new.gz
+
+    - name: Move AIDE database
+      command: mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
+      args:
+        removes: /var/lib/aide/aide.db.new.gz
+
+    
