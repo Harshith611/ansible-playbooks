@@ -90,6 +90,8 @@
 
     - name: "Checkpoint | Display summary"
       debug:
-        msg: >
-           hardening completed.
+        msg: |
+          Hardening completed.
           Backups were created and settings are now persistent.
+
+
