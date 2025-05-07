@@ -1,0 +1,43 @@
+---
+- name: Ensure audit log storage size is configured
+  hosts: all
+  become: true
+  vars:
+    auditd_conf_path: /etc/audit/auditd.conf
+    backup_timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
+    backup_path: "{{ auditd_conf_path }}.bak_{{ backup_timestamp }}"
+    desired_log_size: 32
+
+  tasks:
+
+    - name: Check if auditd.conf exists
+      stat:
+        path: "{{ auditd_conf_path }}"
+      register: auditd_conf_stat
+
+    - name: Fail if auditd.conf is missing
+      fail:
+        msg: "{{ auditd_conf_path }} does not exist. Please install auditd or check the path."
+      when: not auditd_conf_stat.stat.exists
+
+    - name: Backup auditd.conf with timestamp
+      copy:
+        src: "{{ auditd_conf_path }}"
+        dest: "{{ backup_path }}"
+        remote_src: true
+
+    - name: Set max_log_file value in auditd.conf
+      lineinfile:
+        path: "{{ auditd_conf_path }}"
+        regexp: '^\s*max_log_file\s*='
+        line: "max_log_file = {{ desired_log_size }}"
+        create: no
+        backrefs: yes
+        state: present
+        insertafter: EOF
+
+    - name: Display message for manual reboot
+      debug:
+        msg: |
+          Configuration done. Please review and manually reboot the system if required
+          to ensure auditd picks up changes. Backup created at: {{ backup_path }}
