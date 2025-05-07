@@ -1,0 +1,58 @@
+---
+- name: Ensure Address Space Layout Randomization (ASLR) is enabled
+  hosts: all
+  become: yes
+  tasks:
+    - name: Ensure backup directory exists
+      file:
+        path: /etc/sysctl.d/backups
+        state: directory
+        mode: '0755'
+
+    - name: Check if sysctl config file exists
+      stat:
+        path: /etc/sysctl.d/60-kernel_sysctl.conf
+      register: sysctl_file
+
+    - name: Backup existing sysctl configuration if present
+      shell: |
+        set -e
+        timestamp=$(date +%F_%T)
+        cp /etc/sysctl.d/60-kernel_sysctl.conf /etc/sysctl.d/backups/60-kernel_sysctl.conf.bak_${timestamp}
+      when: sysctl_file.stat.exists
+      register: backup_result
+      ignore_errors: yes
+      failed_when: backup_result.rc != 0
+
+    - name: Ensure sysctl config file exists
+      file:
+        path: /etc/sysctl.d/60-kernel_sysctl.conf
+        state: touch
+
+    - name: Ensure kernel.randomize_va_space is set to 2
+      lineinfile:
+        path: /etc/sysctl.d/60-kernel_sysctl.conf
+        line: "kernel.randomize_va_space = 2"
+        create: yes
+      notify: Apply sysctl changes
+
+    - name: Check current kernel.randomize_va_space setting
+      command: sysctl kernel.randomize_va_space
+      register: sysctl_value
+      changed_when: false
+
+    - name: Display current kernel.randomize_va_space value
+      debug:
+        msg: "Current kernel.randomize_va_space value: {{ sysctl_value.stdout }}"
+
+  handlers:
+    - name: Apply sysctl changes
+      sysctl:
+        name: kernel.randomize_va_space
+        value: '2'
+        state: present
+        reload: yes
+
+    - name: Reminder to reboot system for changes to take effect
+      debug:
+        msg: "Please reboot the system manually to apply the ASLR configuration changes."
