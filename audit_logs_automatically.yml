@@ -1,0 +1,53 @@
+---
+- name: Ensure audit logs are not automatically deleted
+  hosts: all
+  become: true
+  vars:
+    auditd_conf_path: /etc/audit/auditd.conf
+    backup_timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
+    backup_path: "{{ auditd_conf_path }}.bak_{{ backup_timestamp }}"
+    desired_action: keep_logs
+
+  tasks:
+
+    - name: Check if auditd.conf exists
+      stat:
+        path: "{{ auditd_conf_path }}"
+      register: auditd_conf_stat
+
+    - name: Fail if auditd.conf is missing
+      fail:
+        msg: "{{ auditd_conf_path }} does not exist. Please install auditd or check the path."
+      when: not auditd_conf_stat.stat.exists
+
+    - name: Backup auditd.conf with timestamp
+      copy:
+        src: "{{ auditd_conf_path }}"
+        dest: "{{ backup_path }}"
+        remote_src: true
+
+    - name: Set max_log_file_action to keep_logs
+      lineinfile:
+        path: "{{ auditd_conf_path }}"
+        regexp: '^\s*max_log_file_action\s*='
+        line: "max_log_file_action = {{ desired_action }}"
+        create: no
+        backrefs: yes
+        state: present
+        insertafter: EOF
+
+    - name: Display message for manual reboot
+      debug:
+        msg: |
+          Configuration done. Please review and manually reboot the system if required
+          to ensure auditd picks up changes. Backup created at: {{ backup_path }}
+
+    - name: Validate max_log_file_action value in auditd.conf
+      shell: "grep -Ei '^\\s*max_log_file_action\\s*=\\s*{{ desired_action }}\\s*$' {{ auditd_conf_path }}"
+      register: validation_output
+      changed_when: false
+      failed_when: validation_output.rc != 0
+
+    - name: Confirm validation passed
+      debug:
+        msg: "Validation successful: max_log_file_action is correctly set to '{{ desired_action }}'"
