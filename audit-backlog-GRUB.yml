@@ -1,0 +1,30 @@
+- name: Ensure audit_backlog_limit is set to 8192 in GRUB
+  hosts: all
+  become: yes
+  vars:
+    backlog_value: "8192"
+    grub_file: "/etc/default/grub"
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+    backup_file: "{{ grub_file }}.bak.{{ timestamp }}"
+
+  tasks:
+
+    - name: Backup grub file with timestamp
+      copy:
+        src: "{{ grub_file }}"
+        dest: "{{ backup_file }}"
+        remote_src: yes
+
+    - name: Add audit_backlog_limit={{ backlog_value }} to kernel args
+      command: >
+        grubby --update-kernel=ALL --args="audit_backlog_limit={{ backlog_value }}"
+      register: grubby_result
+      changed_when: "'was updated' in grubby_result.stdout or 'updated kernel' in grubby_result.stdout"
+
+    - name: Show grubby output
+      debug:
+        var: grubby_result.stdout
+
+    - name: Reminder - Reboot required to apply audit_backlog_limit change
+      debug:
+        msg: "Manual reboot is required for audit_backlog_limit={{ backlog_value }} to take effect."
