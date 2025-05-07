@@ -1,0 +1,55 @@
+---
+- name: Ensure auditd warns when logs are low on space
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Check if /etc/audit/auditd.conf exists
+      stat:
+        path: /etc/audit/auditd.conf
+      register: auditd_conf_stat
+
+    - name: Create default auditd.conf if missing
+      copy:
+        dest: /etc/audit/auditd.conf
+        content: |
+          log_file = /var/log/audit/audit.log
+          space_left_action = email
+          admin_space_left_action = single
+        owner: root
+        group: root
+        mode: '0640'
+      when: not auditd_conf_stat.stat.exists
+
+    - name: Backup auditd.conf with timestamp
+      copy:
+        src: /etc/audit/auditd.conf
+        dest: "/etc/audit/auditd.conf.backup_{{ ansible_date_time.iso8601 | regex_replace('[:T]', '_') }}"
+        remote_src: true
+      when: auditd_conf_stat.stat.exists
+
+    - name: Set space_left_action = email
+      lineinfile:
+        path: /etc/audit/auditd.conf
+        regexp: '^space_left_action\s*='
+        line: 'space_left_action = email'
+        create: yes
+        backup: no
+
+    - name: Set admin_space_left_action = single
+      lineinfile:
+        path: /etc/audit/auditd.conf
+        regexp: '^admin_space_left_action\s*='
+        line: 'admin_space_left_action = single'
+        create: yes
+        backup: no
+
+    - name: Restart auditd (may fail if RefuseManualStop is enabled)
+      systemd:
+        name: auditd
+        state: restarted
+      ignore_errors: true
+
+    - name: Display reboot recommendation
+      debug:
+        msg: "✅ Configuration done. Please reboot the system manually to apply changes cleanly."
