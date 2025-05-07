@@ -1,0 +1,60 @@
+---
+- name: "CIS 3.3.3 | Ensure bogus ICMP responses are ignored"
+  hosts: all
+  become: yes
+  vars:
+    sysctl_file: "/etc/sysctl.d/60-netipv4_sysctl.conf"
+    backup_dir: "/var/backups/sysctl_cis"
+    checkpoint_file: "/var/log/cis_3.3.3_icmp_ignore_bogus.chk"
+    setting_name: "net.ipv4.icmp_ignore_bogus_error_responses"
+    setting_value: "1"
+
+  tasks:
+
+    - name: "Check if CIS 3.3.3 already applied"
+      stat:
+        path: "{{ checkpoint_file }}"
+      register: checkpoint_stat
+
+    - name: "Create backup directory"
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0750'
+
+    - name: "Backup sysctl config if it exists"
+      copy:
+        src: "{{ sysctl_file }}"
+        dest: "{{ backup_dir }}/60-netipv4_sysctl.conf.bak_{{ ansible_date_time.iso8601 }}"
+        remote_src: yes
+      when:
+        - not checkpoint_stat.stat.exists
+        - ansible_facts['os_family'] == "RedHat" or ansible_facts['os_family'] == "Debian"
+
+    - name: "Persist ICMP ignore bogus error response setting"
+      lineinfile:
+        path: "{{ sysctl_file }}"
+        line: "{{ setting_name }} = {{ setting_value }}"
+        create: yes
+        state: present
+
+    - name: "Apply setting to running kernel"
+      sysctl:
+        name: "{{ setting_name }}"
+        value: "{{ setting_value }}"
+        state: present
+        reload: yes
+
+    - name: "Flush IPv4 route cache"
+      command: sysctl -w net.ipv4.route.flush=1
+
+    - name: "Create checkpoint"
+      file:
+        path: "{{ checkpoint_file }}"
+        state: touch
+        mode: '0600'
+
+    - name: "Show success message"
+      debug:
+        msg: "CIS 3.3.3 applied: ICMP bogus error responses will be ignored."
+
