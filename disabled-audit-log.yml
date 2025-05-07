@@ -1,0 +1,47 @@
+---
+- name: Ensure system is disabled when audit logs are full (CIS 5.2.2.3)
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Ensure /etc/audit directory exists
+      file:
+        path: /etc/audit
+        state: directory
+        mode: '0755'
+
+    - name: Ensure auditd.conf exists
+      copy:
+        dest: /etc/audit/auditd.conf
+        content: ""
+        force: no
+        mode: '0640'
+
+    - name: Backup current auditd.conf
+      copy:
+        src: /etc/audit/auditd.conf
+        dest: /etc/audit/auditd.conf.bak_{{ ansible_date_time.iso8601 }}
+        remote_src: yes
+        mode: '0640'
+
+    - name: Ensure disk_full_action is set to 'halt'
+      lineinfile:
+        path: /etc/audit/auditd.conf
+        regexp: '^ *disk_full_action *=.*'
+        line: 'disk_full_action = halt'
+        create: yes
+        mode: '0640'
+
+    - name: Ensure disk_error_action is set to 'halt'
+      lineinfile:
+        path: /etc/audit/auditd.conf
+        regexp: '^ *disk_error_action *=.*'
+        line: 'disk_error_action = halt'
+        create: yes
+        mode: '0640'
+
+    - name: Restart auditd service
+      service:
+        name: auditd
+        state: restarted
+        enabled: yes
