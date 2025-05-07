@@ -1,0 +1,23 @@
+---
+- name: Ensure auditd service is enabled and started
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Ensure /etc/audit/rules.d/audit.rules exists before backup
+      stat:
+        path: /etc/audit/rules.d/audit.rules
+      register: audit_rules_file
+
+    - name: Backup auditd rules file with timestamp
+      copy:
+        src: /etc/audit/rules.d/audit.rules
+        dest: "/etc/audit/rules.d/audit.rules.bak_{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+        remote_src: yes
+      when: audit_rules_file.stat.exists
+
+    - name: Enable and start auditd service
+      systemd:
+        name: auditd
+        enabled: yes
+        state: started
