@@ -1,0 +1,44 @@
+---
+- name: Ensure inactive password lock is 30 days or less (CIS 4.5.1.4)
+  hosts: all
+  become: true
+  vars:
+    backup_time: "{{ lookup('pipe', 'date +%F_%H-%M-%S') }}"
+    shadow_file: "/etc/shadow"
+    login_defs_file: "/etc/login.defs"
+    useradd_path: "/etc/default/useradd"
+
+  tasks:
+
+    - name: Backup login.defs
+      copy:
+        src: "{{ login_defs_file }}"
+        dest: "{{ login_defs_file }}.bak_{{ backup_time }}"
+        remote_src: true
+
+    - name: Backup /etc/shadow
+      copy:
+        src: "{{ shadow_file }}"
+        dest: "{{ shadow_file }}.bak_{{ backup_time }}"
+        remote_src: true
+        mode: '000'
+
+    - name: Set default user inactivity to 30 days
+      command: useradd -D -f 30
+
+    - name: Get users with valid passwords from /etc/shadow
+      shell: "awk -F: '($2 ~ /^[^*!]/) { print $1 }' {{ shadow_file }}"
+      register: valid_users
+      changed_when: false
+
+    - name: Set --inactive 30 for each user
+      command: chage --inactive 30 {{ item }}
+      loop: "{{ valid_users.stdout_lines }}"
+      when: item != 'nobody'
+
+    - name: Notice
+      debug:
+        msg: |
+          All changes made safely. Please manually reboot the system to apply all changes.
+          Backups:
+        
