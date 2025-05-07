@@ -1,0 +1,61 @@
+---
+- name: SSH Hardening - Safe for Production
+  hosts: all
+  become: true
+  vars:
+    ssh_config: "/etc/ssh/sshd_config"
+    backup_path: "/etc/ssh/sshd_config.bak_{{ ansible_date_time.iso8601_basic_short }}"
+    kex_algorithms: "KexAlgorithms +curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp521,ecdh-sha2-nistp384,ecdh-sha2-nistp256,diffie-hellman-group-exchange-sha256"
+    max_auth_tries: "MaxAuthTries 4"
+    max_startups: "MaxStartups 10:30:60"
+
+  tasks:
+
+    - name: Backup current sshd_config
+      copy:
+        src: "{{ ssh_config }}"
+        dest: "{{ backup_path }}"
+        mode: '0600'
+      register: backup_result
+
+    - name: Ensure safe KexAlgorithms are set (appended, not overwritten)
+      lineinfile:
+        path: "{{ ssh_config }}"
+        line: "{{ kex_algorithms }}"
+        state: present
+        create: no
+        insertafter: EOF
+
+    - name: Set MaxAuthTries to 4
+      lineinfile:
+        path: "{{ ssh_config }}"
+        regexp: "^MaxAuthTries"
+        line: "{{ max_auth_tries }}"
+        state: present
+        create: no
+
+    - name: Set MaxStartups to 10:30:60
+      lineinfile:
+        path: "{{ ssh_config }}"
+        regexp: "^MaxStartups"
+        line: "{{ max_startups }}"
+        state: present
+        create: no
+
+    - name: Test sshd configuration before restart
+      shell: sshd -t
+      register: sshd_test
+      failed_when: sshd_test.rc != 0
+      changed_when: false
+
+    - name: Restart sshd only if config test passes
+      service:
+        name: sshd
+        state: restarted
+      when: sshd_test.rc == 0
+
+    - name: Print success message
+      debug:
+        msg: >
+          SSH hardening applied safely. Backup at {{ backup_path }}.
+          Config test passed, sshd restarted.
