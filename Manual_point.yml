@@ -1,61 +1,52 @@
 ---
 - name: SSH Hardening - Safe for Production
   hosts: all
-  become: true
-  vars:
-    ssh_config: "/etc/ssh/sshd_config"
-    backup_path: "/etc/ssh/sshd_config.bak_{{ ansible_date_time.iso8601_basic_short }}"
-    kex_algorithms: "KexAlgorithms +curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp521,ecdh-sha2-nistp384,ecdh-sha2-nistp256,diffie-hellman-group-exchange-sha256"
-    max_auth_tries: "MaxAuthTries 4"
-    max_startups: "MaxStartups 10:30:60"
-
+  become: yes
   tasks:
+
+    - name: Ensure backup directory exists
+      file:
+        path: /etc/ssh/backup
+        state: directory
+        mode: '0755'
 
     - name: Backup current sshd_config
       copy:
-        src: "{{ ssh_config }}"
-        dest: "{{ backup_path }}"
+        src: /etc/ssh/sshd_config
+        dest: "/etc/ssh/backup/sshd_config.bak_{{ ansible_date_time.iso8601 }}"
+        remote_src: yes
         mode: '0600'
-      register: backup_result
 
-    - name: Ensure safe KexAlgorithms are set (appended, not overwritten)
+    - name: Set 'PermitRootLogin no'
       lineinfile:
-        path: "{{ ssh_config }}"
-        line: "{{ kex_algorithms }}"
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin\s+.*'
+        line: 'PermitRootLogin no'
         state: present
-        create: no
-        insertafter: EOF
 
-    - name: Set MaxAuthTries to 4
+    - name: Set 'PasswordAuthentication no'
       lineinfile:
-        path: "{{ ssh_config }}"
-        regexp: "^MaxAuthTries"
-        line: "{{ max_auth_tries }}"
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication\s+.*'
+        line: 'PasswordAuthentication no'
         state: present
-        create: no
 
-    - name: Set MaxStartups to 10:30:60
+    - name: Set 'PermitEmptyPasswords no'
       lineinfile:
-        path: "{{ ssh_config }}"
-        regexp: "^MaxStartups"
-        line: "{{ max_startups }}"
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitEmptyPasswords\s+.*'
+        line: 'PermitEmptyPasswords no'
         state: present
-        create: no
 
-    - name: Test sshd configuration before restart
-      shell: sshd -t
-      register: sshd_test
-      failed_when: sshd_test.rc != 0
-      changed_when: false
+    - name: Set 'AllowUsers' to restrict access (optional - customize as needed)
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?AllowUsers\s+.*'
+        line: 'AllowUsers adminuser'
+        state: present
+      when: allow_users | default(true)
 
-    - name: Restart sshd only if config test passes
+    - name: Restart SSH service
       service:
         name: sshd
         state: restarted
-      when: sshd_test.rc == 0
-
-    - name: Print success message
-      debug:
-        msg: >
-          SSH hardening applied safely. Backup at {{ backup_path }}.
-          Config test passed, sshd restarted.
